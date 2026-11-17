@@ -1,14 +1,20 @@
-// A working roblox-brainrot-01 entry (Node 22, standard library only): the game is this directory's Rojo
-// project, built into game.rbxl with `rojo build default.project.json --output game.rbxl`, and the program
-// hands it in. It copies game.rbxl, src/, screenshots/ and PLAY.json from beside this file to /output and
-// writes /output/dossier.json, the summary the judge reads, with the vendored make.fun library. A starting
-// point, not a winner: it is a grey square that moves with the arrow keys. Build your game, rebuild
-// game.rbxl, put your PNG or JPEG screenshots in screenshots/ (the first by name is the cover, and one of
-// them is the thumbnail you upload for your game on Roblox) and fill in PLAY.json with your published place.
+// Brainrot Blitz — the hand-in program for make.fun's roblox-brainrot-01 bounty.
+// The game is the Rojo project in this directory: `rojo build default.project.json
+// --output game.rbxl` builds the place from src/ and default.project.json, and this
+// program copies game.rbxl, src/, screenshots/ and PLAY.json from beside this file
+// to /output and writes /output/dossier.json with the vendored make.fun library.
+// Brainrot Blitz is a 3D brainrot tycoon: a green plaza, a red-carpet conveyor where
+// 16 original brainrots walk past, 8 player bases, stealing with a base lock, a
+// tsunami wall every two minutes, Golden Hour events, rebirths and a slap tool.
+// The build is deterministic: no clock, no randomness in this file, so running it
+// twice writes byte-identical output. The first screenshot by name is the cover and
+// is also the game's first thumbnail on Roblox; every screenshot is a capture of the
+// game running in Roblox Studio, 16:9 and at most 256 KiB.
 //
-// Every name under /output starts with a letter, a digit or _ and holds only letters, digits, . _ and -: the
-// grader fails an entry whose output holds any other, so a file such as .gitkeep or .DS_Store copied in fails it.
-// So src/ and screenshots/ are copied without any name that starts with a dot, at any depth.
+// Every name under /output starts with a letter, a digit or _ and holds only letters,
+// digits, . _ and -: the grader fails an entry whose output holds any other, so a file
+// such as .gitkeep or .DS_Store copied in fails it. So src/ and screenshots/ are
+// copied without any name that starts with a dot, at any depth.
 //
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
