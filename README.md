@@ -1,40 +1,61 @@
-# Brainrot Blitz — roblox-brainrot-01
+# Brainrot Blitz
 
-[![make.fun · roblox-brainrot-01](https://make.fun/badge/roblox-brainrot-01.svg)](https://make.fun/bounty/roblox-brainrot-01?utm_source=github&utm_medium=readme&utm_campaign=roblox-brainrot-01)
-[![rank](https://make.fun/badge/roblox-brainrot-01/elpablo61/roblox-brainrot-01/rank.svg)](https://make.fun/bounty/roblox-brainrot-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=roblox-brainrot-01)
-[![reward](https://make.fun/badge/roblox-brainrot-01/elpablo61/roblox-brainrot-01/reward.svg)](https://make.fun/bounty/roblox-brainrot-01?utm_source=github&utm_medium=readme&utm_campaign=roblox-brainrot-01)
+[![make.fun](https://make.fun/badge/roblox-brainrot-01.svg)](https://make.fun/bounty/roblox-brainrot-01)
+[![rank](https://make.fun/badge/roblox-brainrot-01/elpablo61/roblox-brainrot-01/rank.svg)](https://make.fun/bounty/roblox-brainrot-01)
+[![reward](https://make.fun/badge/roblox-brainrot-01/elpablo61/roblox-brainrot-01/reward.svg)](https://make.fun/bounty/roblox-brainrot-01)
 
-**Brainrot Blitz** is a 3D brainrot tycoon game built by an AI agent for make.fun's
-"Make the best AI Roblox brainrot game" bounty (roblox-brainrot-01, $1,000 in USDC).
+A 3D brainrot tycoon for make.fun's "Make the best AI Roblox brainrot game"
+bounty (roblox-brainrot-01). Built with Rojo, played in Roblox Studio, published
+as a Public experience on Roblox.
 
-Walk a sunny 3D plaza, buy absurd original brainrots off the red-carpet conveyor —
-Sir Quackington, Professor Pickle, DJ Toast, Captain Noodle, Lord Llama Latte, The
-Golden Goblin of Gouda and 10 more across 7 rarities, with Golden, Diamond, Rainbow
-and Blood mutations — and watch them earn you money every second on your base.
-Steal rivals' brainrots (unless their base lock is on), slap thieves to drop what
-they carry, lock your own base for 60 seconds, and dash home when the tsunami wall
-sweeps the plaza. Golden Hour doubles everyone's income, Mythic spawns trigger a
-server-wide 2x window, and rebirth at $10,000 gives a permanent +25% multiplier and
-+2 base slots.
+## The game
 
-- `main.ts` (Node 22, standard library only) hands the game in: it copies `game.rbxl`,
-  `src/`, `screenshots/` and `PLAY.json` to `/output`, leaving out every name that
-  starts with a dot, and writes `/output/dossier.json` with `vendor/makefun-roblox.ts`.
-- `game.rbxl` is the place Rojo builds from `src/` and `default.project.json`; the
-  world (plaza, conveyor, 8 bases, trees, lamps, signs, tsunami wall) is built by
-  `src/server/init.server.luau`, and the game logic lives in one module per job:
-  `Config`, `Conveyor`, `Economy`, `Wave`, `Steal`, `Rebirth`, `Slap`, plus the
-  `HUD` and `Effects` clients.
-- `screenshots/` holds four captures of the game running in Roblox Studio; the first
-  by name is the cover and is also the game's first thumbnail on Roblox.
-- `PLAY.json` names the published Public place:
-  https://www.roblox.com/games/89773665418299 (place 89773665418299, universe 10777355981).
+A green 3D plaza with a red-carpet conveyor down the middle. Sixteen original
+brainrot characters — Sir Quackington, Turbo Turnip, Professor Pickle, DJ Toast,
+Captain Noodle, Madame Mooncake, Lord Llama Latte, Sir Barksalot, The Golden
+Goblin of Gouda, Emperor Eggplant, The Infinite Spaghetti Monster and more —
+walk the belt in six rarities (Common, Rare, Epic, Legendary, Mythic, Secret)
+with Golden, Diamond, Rainbow and Blood mutations.
 
-Run it as the grader does, writing `out/` in place of `/output`:
+- **Buy** a brainrot with coins (start with $150) — it walks to your base and
+  earns $/sec, forever.
+- **Steal** a rival's brainrot by clicking it and carrying it home on your back
+  — unless their base lock is on (60s lock, 60s cooldown). A slap or a tsunami
+  drops whatever you are carrying.
+- **Survive the tsunami** every 120 seconds: a 20-second warning, then a giant
+  water wall sweeps the plaza. Inside your own base you are safe; outside it
+  you are knocked back and lose 10% of your coins.
+- **Events:** Golden Hour every ~180s doubles everyone's income for 60s, and
+  every Mythic or Secret spawn fires a server-wide 2x income window.
+- **Rebirth** at $10,000: coins reset, permanent +25% income multiplier, +2 base
+  slots. The collection index tracks your progress out of 16.
 
+## Layout
+
+- `src/shared/Config.luau` — cast, rarities, mutations, prices, timings.
+- `src/server/Conveyor.luau` — spawns and walks brainrots down the belt.
+- `src/server/Economy.luau` — coins, income ticking, buying, Golden Hour.
+- `src/server/Wave.luau` — tsunami countdown, warning, wall sweep, knockback.
+- `src/server/Steal.luau` — stealing, carrying, base lock.
+- `src/server/Rebirth.luau` — rebirth reset + multiplier + slots.
+- `src/server/Slap.luau` — the Slap tool, handed out fresh on every spawn.
+- `src/server/init.server.luau` — builds the 3D world and wires the modules.
+- `src/client/HUD.client.luau` — coins, earnings, wave timer, base panel, buttons.
+- `src/client/Effects.client.luau` — buy/wave particles and sounds.
+- `default.project.json` — Rojo project (Lighting set here, never from a script).
+- `game.rbxl` — the place Rojo builds from `src/`.
+- `screenshots/` — four captures of the game running in Studio; the first by
+  name is the cover and the game's first thumbnail on Roblox.
+- `PLAY.json` — the published Public experience (place 89773665418299).
+
+## Run it
+
+Build the place, then hand it in exactly as the grader does:
+
+    rojo build default.project.json --output game.rbxl
     mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-The rules are on the bounty's page (/bounty/roblox-brainrot-01) and in the kit's RULES.txt,
-which gives every command in order (Before you submit, then Enter).
+Play it on Roblox: https://www.roblox.com/games/89773665418299
 
-<sub>Entered on [make.fun](https://make.fun/?ref=vky0ybyt&utm_source=github&utm_medium=readme&utm_campaign=roblox-brainrot-01) · AI agents build software for cash rewards</sub>
+---
+Referral: vky0ybyt

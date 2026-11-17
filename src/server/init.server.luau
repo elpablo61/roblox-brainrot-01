@@ -1,13 +1,381 @@
--- init.server: builds the Brainrot Blitz world, wires every module, runs the game loops.
--- Rojo-first: the whole 3D world is built here at runtime, so the place file stays small
--- while the running game is dense: plaza, red-carpet conveyor, 8 bases, trees, lamps,
--- fences, clouds, signs, a rival dummy, and the tsunami wall.
+-- Brainrot Blitz server init: builds the whole 3D world, creates the remotes
+-- and the shared game state, then wires every module together.
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
+local Players = game:GetService("Players")
 
-local Config = require(ReplicatedStorage.Shared.Config)
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+
+local buildBaseplate
+local buildPlazaTiles
+local buildConveyor
+local buildBase
+local buildTrees
+local buildLamps
+local buildFence
+local buildClouds
+local buildSign
+local buildBoards
+local buildSpawn
+local makeBoardText
+
+function buildWorld()
+	Lighting.ClockTime = 14
+	Lighting.Brightness = 3
+	Lighting.Ambient = Color3.fromRGB(200, 200, 200)
+	Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 180)
+	Lighting.GlobalShadows = true
+	buildBaseplate()
+	buildPlazaTiles()
+	buildConveyor()
+	for i, base in ipairs(Config.BASES) do
+		buildBase(i, base)
+	end
+	buildTrees()
+	buildLamps()
+	buildFence()
+	buildClouds()
+	buildSign()
+	buildBoards()
+	buildSpawn()
+end
+
+buildBaseplate = function()
+	local plate = Instance.new("Part")
+	plate.Name = "Baseplate"
+	plate.Size = Vector3.new(400, 4, 400)
+	plate.Position = Vector3.new(0, -2, 0)
+	plate.Color = Color3.fromRGB(90, 200, 90)
+	plate.Material = Enum.Material.Grass
+	plate.Anchored = true
+	plate.Locked = true
+	plate.Parent = workspace
+end
+
+buildPlazaTiles = function()
+	for gx = 1, 20 do
+		for gz = 1, 20 do
+			local tile = Instance.new("Part")
+			tile.Name = "PlazaTile"
+			tile.Size = Vector3.new(4, 0.2, 4)
+			tile.Position = Vector3.new((gx - 10.5) * 4, 0.1, (gz - 10.5) * 4)
+			if (gx + gz) % 2 == 0 then
+				tile.Color = Color3.fromRGB(120, 220, 120)
+			else
+				tile.Color = Color3.fromRGB(100, 200, 100)
+			end
+			tile.Material = Enum.Material.SmoothPlastic
+			tile.Anchored = true
+			tile.CanCollide = false
+			tile.Parent = workspace
+		end
+	end
+end
+
+buildConveyor = function()
+	local carpet = Instance.new("Part")
+	carpet.Name = "ConveyorCarpet"
+	carpet.Size = Vector3.new(14, 1, 124)
+	carpet.Position = Vector3.new(0, 0.5, 0)
+	carpet.Color = Color3.fromRGB(200, 30, 40)
+	carpet.Material = Enum.Material.Carpet
+	carpet.Anchored = true
+	carpet.Parent = workspace
+	local railL = Instance.new("Part")
+	railL.Name = "ConveyorRailL"
+	railL.Size = Vector3.new(1, 2, 124)
+	railL.Position = Vector3.new(-7.5, 1, 0)
+	railL.Color = Color3.fromRGB(255, 215, 0)
+	railL.Material = Enum.Material.Metal
+	railL.Anchored = true
+	railL.Parent = workspace
+	local railR = railL:Clone()
+	railR.Name = "ConveyorRailR"
+	railR.Position = Vector3.new(7.5, 1, 0)
+	railR.Parent = workspace
+	local startPad = Instance.new("Part")
+	startPad.Name = "ConveyorStart"
+	startPad.Size = Vector3.new(14, 0.4, 4)
+	startPad.Position = Vector3.new(0, 1.1, -62)
+	startPad.Color = Color3.fromRGB(255, 215, 0)
+	startPad.Anchored = true
+	startPad.Parent = workspace
+	local endPad = startPad:Clone()
+	endPad.Name = "ConveyorEnd"
+	endPad.Position = Vector3.new(0, 1.1, 62)
+	endPad.Parent = workspace
+end
+
+buildBase = function(index, base)
+	local color = Config.BASE_COLORS[index]
+	local floor = Instance.new("Part")
+	floor.Name = "BaseFloor" .. index
+	floor.Size = Vector3.new(22, 1, 22)
+	floor.Position = Vector3.new(base.x, 0.5, base.z)
+	floor.Color = color
+	floor.Transparency = 0.35
+	floor.Material = Enum.Material.SmoothPlastic
+	floor.Anchored = true
+	floor.Parent = workspace
+	for _, offset in ipairs({ -11, 11 }) do
+		local wallX = Instance.new("Part")
+		wallX.Name = "BaseWall"
+		wallX.Size = Vector3.new(22, 3, 1)
+		wallX.Position = Vector3.new(base.x, 1.5, base.z + offset)
+		wallX.Color = color
+		wallX.Anchored = true
+		wallX.Parent = workspace
+		local wallZ = Instance.new("Part")
+		wallZ.Name = "BaseWall"
+		wallZ.Size = Vector3.new(1, 3, 22)
+		wallZ.Position = Vector3.new(base.x + offset, 1.5, base.z)
+		wallZ.Color = color
+		wallZ.Anchored = true
+		wallZ.Parent = workspace
+	end
+	for tx = 1, 4 do
+		for tz = 1, 4 do
+			local tile = Instance.new("Part")
+			tile.Name = "BaseTile"
+			tile.Size = Vector3.new(4, 0.2, 4)
+			tile.Position = Vector3.new(base.x - 7.5 + (tx - 1) * 5, 1.1, base.z - 7.5 + (tz - 1) * 5)
+			tile.Color = Color3.fromRGB(255, 255, 255)
+			tile.Transparency = 0.5
+			tile.Anchored = true
+			tile.CanCollide = false
+			tile.Parent = workspace
+		end
+	end
+	local signPost = Instance.new("Part")
+	signPost.Name = "BaseSignPost"
+	signPost.Size = Vector3.new(1, 6, 1)
+	signPost.Position = Vector3.new(base.x, 3, base.z - 11)
+	signPost.Color = Color3.fromRGB(100, 70, 40)
+	signPost.Anchored = true
+	signPost.Parent = workspace
+	local sign = Instance.new("Part")
+	sign.Name = "BaseSign" .. index
+	sign.Size = Vector3.new(10, 4, 0.5)
+	sign.Position = Vector3.new(base.x, 7, base.z - 11)
+	sign.Color = color
+	sign.Anchored = true
+	sign.Parent = workspace
+	makeBoardText(sign, "BASE " .. index, 36, Color3.fromRGB(255, 255, 255))
+end
+
+buildTrees = function()
+	for i = 1, 20 do
+		local angle = (i / 20) * math.pi * 2
+		local radius = 88 + (i % 3) * 8
+		local x = math.cos(angle) * radius
+		local z = math.sin(angle) * radius
+		local trunk = Instance.new("Part")
+		trunk.Name = "TreeTrunk"
+		trunk.Size = Vector3.new(2, 8, 2)
+		trunk.Position = Vector3.new(x, 4, z)
+		trunk.Color = Color3.fromRGB(120, 70, 30)
+		trunk.Anchored = true
+		trunk.Parent = workspace
+		local leaves = Instance.new("Part")
+		leaves.Name = "TreeLeaves"
+		leaves.Shape = Enum.PartType.Ball
+		leaves.Size = Vector3.new(9, 9, 9)
+		leaves.Position = Vector3.new(x, 11, z)
+		leaves.Color = Color3.fromRGB(40, 160, 50)
+		leaves.Anchored = true
+		leaves.Parent = workspace
+		local top = Instance.new("Part")
+		top.Name = "TreeTop"
+		top.Shape = Enum.PartType.Ball
+		top.Size = Vector3.new(6, 6, 6)
+		top.Position = Vector3.new(x, 15, z)
+		top.Color = Color3.fromRGB(60, 190, 70)
+		top.Anchored = true
+		top.Parent = workspace
+	end
+	for i = 1, 24 do
+		local angle = (i / 24) * math.pi * 2 + 0.3
+		local radius = 78 + (i % 4) * 6
+		local bush = Instance.new("Part")
+		bush.Name = "Bush"
+		bush.Shape = Enum.PartType.Ball
+		bush.Size = Vector3.new(4, 3, 4)
+		bush.Position = Vector3.new(math.cos(angle) * radius, 1.5, math.sin(angle) * radius)
+		bush.Color = Color3.fromRGB(50, 180, 60)
+		bush.Anchored = true
+		bush.Parent = workspace
+	end
+end
+
+buildLamps = function()
+	for i = 1, 12 do
+		local angle = (i / 12) * math.pi * 2
+		local x = math.cos(angle) * 46
+		local z = math.sin(angle) * 46
+		local pole = Instance.new("Part")
+		pole.Name = "LampPole"
+		pole.Size = Vector3.new(1, 9, 1)
+		pole.Position = Vector3.new(x, 4.5, z)
+		pole.Color = Color3.fromRGB(60, 60, 60)
+		pole.Anchored = true
+		pole.Parent = workspace
+		local bulb = Instance.new("Part")
+		bulb.Name = "LampBulb"
+		bulb.Shape = Enum.PartType.Ball
+		bulb.Size = Vector3.new(2.5, 2.5, 2.5)
+		bulb.Position = Vector3.new(x, 9.5, z)
+		bulb.Color = Color3.fromRGB(255, 240, 150)
+		bulb.Material = Enum.Material.Neon
+		bulb.Anchored = true
+		bulb.Parent = workspace
+		local light = Instance.new("PointLight")
+		light.Color = Color3.fromRGB(255, 230, 150)
+		light.Range = 18
+		light.Brightness = 1
+		light.Parent = bulb
+	end
+end
+
+buildFence = function()
+	for i = 0, 35 do
+		local t = (i / 36) * 360
+		local x = 0
+		local z = 0
+		if t < 90 then
+			x = -90 + t * 2
+			z = -90
+		elseif t < 180 then
+			x = 90
+			z = -90 + (t - 90) * 2
+		elseif t < 270 then
+			x = 90 - (t - 180) * 2
+			z = 90
+		else
+			x = -90
+			z = 90 - (t - 270) * 2
+		end
+		local post = Instance.new("Part")
+		post.Name = "FencePost"
+		post.Size = Vector3.new(1, 4, 1)
+		post.Position = Vector3.new(x, 2, z)
+		post.Color = Color3.fromRGB(255, 255, 255)
+		post.Anchored = true
+		post.Parent = workspace
+	end
+end
+
+buildClouds = function()
+	for i = 1, 8 do
+		local cloud = Instance.new("Part")
+		cloud.Name = "Cloud"
+		cloud.Size = Vector3.new(18, 4, 10)
+		cloud.Position = Vector3.new(-80 + i * 22, 42 + (i % 3) * 4, -70 + (i % 4) * 35)
+		cloud.Color = Color3.fromRGB(255, 255, 255)
+		cloud.Transparency = 0.15
+		cloud.Anchored = true
+		cloud.CanCollide = false
+		cloud.Parent = workspace
+	end
+end
+
+buildSign = function()
+	local postL = Instance.new("Part")
+	postL.Name = "SignPostL"
+	postL.Size = Vector3.new(1.5, 12, 1.5)
+	postL.Position = Vector3.new(-11, 6, -85)
+	postL.Color = Color3.fromRGB(100, 70, 40)
+	postL.Anchored = true
+	postL.Parent = workspace
+	local postR = postL:Clone()
+	postR.Name = "SignPostR"
+	postR.Position = Vector3.new(11, 6, -85)
+	postR.Parent = workspace
+	local board = Instance.new("Part")
+	board.Name = "EntranceSign"
+	board.Size = Vector3.new(26, 9, 1)
+	board.Position = Vector3.new(0, 12, -85)
+	board.Color = Color3.fromRGB(255, 200, 0)
+	board.Anchored = true
+	board.Parent = workspace
+	makeBoardText(board, "BRAINROT BLITZ", 48, Color3.fromRGB(160, 30, 30))
+end
+
+buildBoards = function()
+	local howTo = Instance.new("Part")
+	howTo.Name = "HowToBoard"
+	howTo.Size = Vector3.new(18, 9, 1)
+	howTo.Position = Vector3.new(-26, 5, -68)
+	howTo.Color = Color3.fromRGB(120, 80, 40)
+	howTo.Anchored = true
+	howTo.Parent = workspace
+	makeBoardText(howTo, "HOW TO PLAY: BUY brainrots - EARN $/sec - STEAL rivals - LOCK your base - SURVIVE the tsunami - REBIRTH x1.25", 28, Color3.fromRGB(255, 255, 255))
+	local nextTier = Instance.new("Part")
+	nextTier.Name = "NextTierBoard"
+	nextTier.Size = Vector3.new(16, 7, 1)
+	nextTier.Position = Vector3.new(16, 4, -42)
+	nextTier.Color = Color3.fromRGB(40, 40, 60)
+	nextTier.Anchored = true
+	nextTier.Parent = workspace
+	makeBoardText(nextTier, "NEXT TIER: RARE - Professor Pickle - $20/s - $250", 26, Color3.fromRGB(255, 220, 60))
+end
+
+buildSpawn = function()
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Name = "SpawnLocation"
+	spawn.Size = Vector3.new(8, 1, 8)
+	spawn.Position = Vector3.new(0, 0.5, -78)
+	spawn.Color = Color3.fromRGB(120, 220, 120)
+	spawn.Anchored = true
+	spawn.Neutral = true
+	spawn.Parent = workspace
+end
+
+makeBoardText = function(part, text, textSize, textColor)
+	for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
+		local gui = Instance.new("SurfaceGui")
+		gui.Name = "BoardGui"
+		gui.Face = face
+		gui.AlwaysOnTop = false
+		gui.Parent = part
+		local label = Instance.new("TextLabel")
+		label.Name = "BoardText"
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Text = text
+		label.TextColor3 = textColor
+		label.TextStrokeTransparency = 0
+		label.TextSize = textSize
+		label.TextWrapped = true
+		label.Font = Enum.Font.GothamBold
+		label.Parent = gui
+	end
+end
+
+-- Build the world first, then the remotes, then wire the modules.
+buildWorld()
+
+local gameState = Instance.new("Folder")
+gameState.Name = "GameState"
+gameState:SetAttribute("WaveTime", Config.WAVE_INTERVAL)
+gameState:SetAttribute("WaveState", "countdown")
+gameState:SetAttribute("GoldenActive", false)
+gameState:SetAttribute("MythicActive", false)
+gameState:SetAttribute("NextTier", "Professor Pickle")
+gameState.Parent = ReplicatedStorage
+
+local notify = Instance.new("RemoteEvent")
+notify.Name = "BrainrotNotify"
+notify.Parent = ReplicatedStorage
+
+local lockRequest = Instance.new("RemoteEvent")
+lockRequest.Name = "LockRequest"
+lockRequest.Parent = ReplicatedStorage
+
+local rebirthRequest = Instance.new("RemoteEvent")
+rebirthRequest.Name = "RebirthRequest"
+rebirthRequest.Parent = ReplicatedStorage
+
 local Conveyor = require(script.Conveyor)
 local Economy = require(script.Economy)
 local Wave = require(script.Wave)
@@ -15,331 +383,25 @@ local Steal = require(script.Steal)
 local Rebirth = require(script.Rebirth)
 local Slap = require(script.Slap)
 
-local BASE_CENTERS = {
-	Vector3.new(28, 0, 60), Vector3.new(-28, 0, 60),
-	Vector3.new(84, 0, 60), Vector3.new(-84, 0, 60),
-	Vector3.new(28, 0, -60), Vector3.new(-28, 0, -60),
-	Vector3.new(84, 0, -60), Vector3.new(-84, 0, -60),
-}
-local BASE_COLORS = {
-	Color3.fromRGB(60, 200, 80), Color3.fromRGB(60, 120, 255),
-	Color3.fromRGB(255, 210, 40), Color3.fromRGB(180, 90, 255),
-	Color3.fromRGB(255, 120, 40), Color3.fromRGB(255, 90, 160),
-	Color3.fromRGB(40, 220, 220), Color3.fromRGB(230, 60, 60),
-}
+lockRequest.OnServerEvent:Connect(function(player)
+	Steal.lockBase(player)
+end)
 
-local world = nil
-local bases = {}
-local nextBase = 1
+rebirthRequest.OnServerEvent:Connect(function(player)
+	Rebirth.applyRebirth(player)
+end)
 
-local function part(name, size, pos, color, material, parent)
-	local p = Instance.new("Part")
-	p.Name = name
-	p.Size = size
-	p.Position = pos
-	p.Color = color
-	p.Material = material or Enum.Material.SmoothPlastic
-	p.Anchored = true
-	p.CanCollide = false
-	p.Parent = parent
-	return p
-end
-
-local function surfaceText(parentPart, face, text, textSize, textColor, bgColor)
-	local gui = Instance.new("SurfaceGui")
-	gui.Name = "SurfaceGui"
-	gui.Face = face
-	gui.AlwaysOnTop = false
-	gui.Parent = parentPart
-	local label = Instance.new("TextLabel")
-	label.Name = "SignText"
-	label.Size = UDim2.fromScale(1, 1)
-	label.BackgroundColor3 = bgColor or Color3.fromRGB(40, 30, 20)
-	label.BackgroundTransparency = 0.1
-	label.Text = text
-	label.TextColor3 = textColor or Color3.fromRGB(255, 255, 255)
-	label.TextSize = textSize or 32
-	label.TextWrapped = true
-	label.Font = Enum.Font.GothamBold
-	label.Parent = gui
-	return label
-end
-
-function buildWorld()
-	world = Instance.new("Folder")
-	world.Name = "World"
-	world.Parent = workspace
-
-	Lighting.ClockTime = 14
-	Lighting.Brightness = 2
-	Lighting.Ambient = Color3.fromRGB(200, 190, 170)
-	Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 160)
-	Lighting.GlobalShadows = true
-
-	-- Green baseplate plaza
-	part("Baseplate", Vector3.new(260, 2, 260), Vector3.new(0, -1, 0), Color3.fromRGB(110, 200, 90), Enum.Material.Grass, world).CanCollide = true
-
-	-- Red carpet conveyor down the middle (z = 0), belt from x -105 to +105
-	local belt = part("ConveyorBelt", Vector3.new(210, 1, 12), Vector3.new(0, 0.5, 0), Color3.fromRGB(200, 30, 40), Enum.Material.Carpet, world)
-	belt.CanCollide = true
-	part("BeltRailL", Vector3.new(210, 1.5, 1), Vector3.new(0, 0.75, -6.5), Color3.fromRGB(255, 215, 0), Enum.Material.Metal, world)
-	part("BeltRailR", Vector3.new(210, 1.5, 1), Vector3.new(0, 0.75, 6.5), Color3.fromRGB(255, 215, 0), Enum.Material.Metal, world)
-	for i = 0, 10 do
-		part("BeltStripe", Vector3.new(1.5, 0.2, 12), Vector3.new(-100 + i * 20, 1.05, 0), Color3.fromRGB(255, 255, 255), Enum.Material.SmoothPlastic, world)
-	end
-
-	-- 8 base plots
-	local basesFolder = Instance.new("Folder")
-	basesFolder.Name = "Bases"
-	basesFolder.Parent = world
-	for i, center in ipairs(BASE_CENTERS) do
-		local color = BASE_COLORS[i]
-		local folder = Instance.new("Folder")
-		folder.Name = "Base" .. tostring(i)
-		folder.Parent = basesFolder
-		local floor = part("BaseFloor", Vector3.new(22, 1, 22), Vector3.new(center.X, 0.5, center.Z), color, Enum.Material.SmoothPlastic, folder)
-		floor.CanCollide = true
-		for tx = -1, 1, 2 do
-			for tz = -1, 1, 2 do
-				part("BaseTile", Vector3.new(9, 0.2, 9), Vector3.new(center.X + tx * 5.5, 1.05, center.Z + tz * 5.5), Color3.fromRGB(255, 255, 255), Enum.Material.SmoothPlastic, folder)
-			end
-		end
-		part("BaseWall", Vector3.new(22, 2, 1), Vector3.new(center.X, 1.5, center.Z - 11), color, Enum.Material.SmoothPlastic, folder)
-		part("BaseWall", Vector3.new(22, 2, 1), Vector3.new(center.X, 1.5, center.Z + 11), color, Enum.Material.SmoothPlastic, folder)
-		part("BaseWall", Vector3.new(1, 2, 22), Vector3.new(center.X - 11, 1.5, center.Z), color, Enum.Material.SmoothPlastic, folder)
-		part("BaseWall", Vector3.new(1, 2, 22), Vector3.new(center.X + 11, 1.5, center.Z), color, Enum.Material.SmoothPlastic, folder)
-		part("FlagPole", Vector3.new(0.6, 10, 0.6), Vector3.new(center.X - 9, 6, center.Z - 9), Color3.fromRGB(80, 80, 80), Enum.Material.Metal, folder)
-		part("Flag", Vector3.new(4, 2.5, 0.2), Vector3.new(center.X - 6.8, 9.5, center.Z - 9), color, Enum.Material.Fabric, folder)
-		local lockDome = part("LockSign", Vector3.new(22, 9, 22), Vector3.new(center.X, 5.5, center.Z), Color3.fromRGB(220, 40, 40), Enum.Material.ForceField, folder)
-		lockDome.Transparency = 1
-		local sign = part("BaseSign", Vector3.new(10, 3, 0.6), Vector3.new(center.X, 4, center.Z + 11.5), Color3.fromRGB(40, 30, 20), Enum.Material.Wood, folder)
-		local label = surfaceText(sign, Enum.NormalId.Back, "BASE " .. tostring(i), 36, Color3.fromRGB(255, 255, 255))
-		label.Name = "BaseSignText"
-		bases[i] = { folder = folder, center = center, color = color, claimedBy = nil, signLabel = label }
-	end
-
-	-- Spawn at the south entrance
-	local spawn = Instance.new("SpawnLocation")
-	spawn.Name = "SpawnLocation"
-	spawn.Size = Vector3.new(10, 1, 10)
-	spawn.Position = Vector3.new(0, 0.5, 100)
-	spawn.Color = Color3.fromRGB(120, 200, 255)
-	spawn.Material = Enum.Material.SmoothPlastic
-	spawn.Anchored = true
-	spawn.Neutral = true
-	spawn.Duration = 0
-	spawn.Parent = world
-
-	-- HOW TO PLAY board near spawn (faces south, toward the player)
-	local howTo = part("HowToBoard", Vector3.new(22, 10, 1), Vector3.new(-16, 5.5, 82), Color3.fromRGB(60, 40, 20), Enum.Material.Wood, world)
-	surfaceText(howTo, Enum.NormalId.Back, "HOW TO PLAY\nBUY brainrots • EARN $/sec • STEAL rivals • LOCK your base • SURVIVE the tsunami • REBIRTH x1.25", 30, Color3.fromRGB(255, 240, 120))
-	part("HowToPostL", Vector3.new(1, 5, 1), Vector3.new(-25, 2.5, 82), Color3.fromRGB(60, 40, 20), Enum.Material.Wood, world)
-	part("HowToPostR", Vector3.new(1, 5, 1), Vector3.new(-7, 2.5, 82), Color3.fromRGB(60, 40, 20), Enum.Material.Wood, world)
-
-	-- NEXT TIER board beside the conveyor
-	local nextTier = part("NextTierBoard", Vector3.new(18, 7, 1), Vector3.new(34, 4, 14), Color3.fromRGB(40, 30, 60), Enum.Material.Wood, world)
-	nextTier.Name = "NextTierBoard"
-	local gui = Instance.new("SurfaceGui")
-	gui.Name = "SurfaceGui"
-	gui.Face = Enum.NormalId.Back
-	gui.Parent = nextTier
-	local title = Instance.new("TextLabel")
-	title.Name = "Title"
-	title.Size = UDim2.new(1, 0, 0.4, 0)
-	title.BackgroundTransparency = 1
-	title.Text = "NEXT: EPIC — Captain Noodle — $60/s — $800"
-	title.TextColor3 = Color3.fromRGB(200, 140, 255)
-	title.TextSize = 26
-	title.TextWrapped = true
-	title.Font = Enum.Font.GothamBold
-	title.Parent = gui
-	local beltLine = Instance.new("TextLabel")
-	beltLine.Name = "BeltLine"
-	beltLine.Position = UDim2.new(0, 0, 0.45, 0)
-	beltLine.Size = UDim2.new(1, 0, 0.55, 0)
-	beltLine.BackgroundTransparency = 1
-	beltLine.Text = "ON BELT NOW: —"
-	beltLine.TextColor3 = Color3.fromRGB(255, 255, 255)
-	beltLine.TextSize = 24
-	beltLine.TextWrapped = true
-	beltLine.Font = Enum.Font.GothamBold
-	beltLine.Parent = gui
-
-	-- Big BRAINROT BLITZ sign over the entrance (double-sided)
-	part("SignPostL", Vector3.new(1.5, 14, 1.5), Vector3.new(-14, 7, 95), Color3.fromRGB(60, 40, 20), Enum.Material.Wood, world)
-	part("SignPostR", Vector3.new(1.5, 14, 1.5), Vector3.new(14, 7, 95), Color3.fromRGB(60, 40, 20), Enum.Material.Wood, world)
-	local bigSign = part("BigSign", Vector3.new(30, 7, 1), Vector3.new(0, 13, 95), Color3.fromRGB(200, 30, 40), Enum.Material.SmoothPlastic, world)
-	surfaceText(bigSign, Enum.NormalId.Front, "BRAINROT BLITZ", 48, Color3.fromRGB(255, 230, 60), Color3.fromRGB(200, 30, 40))
-	surfaceText(bigSign, Enum.NormalId.Back, "BRAINROT BLITZ", 48, Color3.fromRGB(255, 230, 60), Color3.fromRGB(200, 30, 40))
-
-	-- Trees around the edges
-	local treeSpots = { {-118, -118}, {-60, -118}, {0, -118}, {60, -118}, {118, -118}, {-118, 0}, {118, 0}, {-118, 118}, {-60, 118}, {60, 118}, {118, 118}, {0, 118} }
-	for _, spot in ipairs(treeSpots) do
-		part("TreeTrunk", Vector3.new(2, 7, 2), Vector3.new(spot[1], 3.5, spot[2]), Color3.fromRGB(120, 70, 30), Enum.Material.Wood, world)
-		part("TreeTop", Vector3.new(7, 7, 7), Vector3.new(spot[1], 10, spot[2]), Color3.fromRGB(40, 160, 60), Enum.Material.SmoothPlastic, world)
-		part("TreeTop2", Vector3.new(5, 4, 5), Vector3.new(spot[1], 14, spot[2]), Color3.fromRGB(60, 190, 80), Enum.Material.SmoothPlastic, world)
-	end
-
-	-- Lamps along the conveyor
-	for _, x in ipairs({ -80, -40, 0, 40, 80 }) do
-		for _, z in ipairs({ -12, 12 }) do
-			part("LampPole", Vector3.new(0.8, 7, 0.8), Vector3.new(x, 3.5, z), Color3.fromRGB(60, 60, 60), Enum.Material.Metal, world)
-			local bulb = part("LampBulb", Vector3.new(2, 2, 2), Vector3.new(x, 7.5, z), Color3.fromRGB(255, 240, 150), Enum.Material.Neon, world)
-			local light = Instance.new("PointLight")
-			light.Brightness = 1
-			light.Range = 18
-			light.Color = Color3.fromRGB(255, 240, 150)
-			light.Parent = bulb
-		end
-	end
-
-	-- Fence posts around the perimeter
-	for x = -120, 120, 16 do
-		part("FencePost", Vector3.new(1, 3, 1), Vector3.new(x, 1.5, -128), Color3.fromRGB(255, 255, 255), Enum.Material.Wood, world)
-		part("FencePost", Vector3.new(1, 3, 1), Vector3.new(x, 1.5, 128), Color3.fromRGB(255, 255, 255), Enum.Material.Wood, world)
-	end
-	for z = -112, 112, 16 do
-		part("FencePost", Vector3.new(1, 3, 1), Vector3.new(-128, 1.5, z), Color3.fromRGB(255, 255, 255), Enum.Material.Wood, world)
-		part("FencePost", Vector3.new(1, 3, 1), Vector3.new(128, 1.5, z), Color3.fromRGB(255, 255, 255), Enum.Material.Wood, world)
-	end
-
-	-- Clouds drifting overhead
-	for i, spot in ipairs({ {-80, -70}, {0, -90}, {80, -60}, {-90, 40}, {90, 50}, {-40, 90}, {50, 95}, {0, 0} }) do
-		part("Cloud", Vector3.new(18, 3, 10), Vector3.new(spot[1], 42 + (i % 3) * 4, spot[2]), Color3.fromRGB(255, 255, 255), Enum.Material.SmoothPlastic, world)
-	end
-
-	-- Bushes and rocks for density
-	local rng = Random.new(7)
-	for _ = 1, 16 do
-		local x = rng:NextNumber(-120, 120)
-		local z = rng:NextNumber(-120, 120)
-		if math.abs(z) > 20 and math.abs(x) < 120 then
-			part("Bush", Vector3.new(4, 3, 4), Vector3.new(x, 1.5, z), Color3.fromRGB(50, 150, 70), Enum.Material.SmoothPlastic, world)
-		end
-	end
-	for _ = 1, 10 do
-		local x = rng:NextNumber(-120, 120)
-		local z = rng:NextNumber(-120, 120)
-		if math.abs(z) > 20 then
-			part("Rock", Vector3.new(3, 2, 3), Vector3.new(x, 1, z), Color3.fromRGB(150, 150, 150), Enum.Material.Slate, world)
-		end
-	end
-
-	-- Tsunami wall (hidden until a wave comes)
-	local wall = part("WaveWall", Vector3.new(260, 30, 2), Vector3.new(0, 15, -130), Color3.fromRGB(60, 140, 255), Enum.Material.Glass, world)
-	wall.Transparency = 1
-	Wave.setWall(wall)
-
-	-- Rival dummy in base 2 with one stealable brainrot (single-player steal demo)
-	local dummy = Instance.new("Model")
-	dummy.Name = "RIVAL"
-	local dBody = part("Body", Vector3.new(2.4, 2.6, 1.6), Vector3.new(-28, 2.3, 60), Color3.fromRGB(200, 60, 60), Enum.Material.SmoothPlastic, dummy)
-	dBody.Anchored = true
-	part("Head", Vector3.new(1.7, 1.4, 1.7), Vector3.new(-28, 4.3, 60), Color3.fromRGB(240, 200, 150), Enum.Material.SmoothPlastic, dummy)
-	local tag = Instance.new("BillboardGui")
-	tag.Name = "Label"
-	tag.Size = UDim2.fromOffset(120, 40)
-	tag.StudsOffsetWorldSpace = Vector3.new(0, 3.2, 0)
-	tag.AlwaysOnTop = true
-	tag.Parent = dummy
-	local tagText = Instance.new("TextLabel")
-	tagText.Size = UDim2.fromScale(1, 1)
-	tagText.BackgroundTransparency = 1
-	tagText.Text = "RIVAL"
-	tagText.TextColor3 = Color3.fromRGB(255, 80, 80)
-	tagText.TextStrokeTransparency = 0
-	tagText.TextScaled = true
-	tagText.Font = Enum.Font.GothamBold
-	tagText.Parent = tag
-	dummy.PrimaryPart = dBody
-	dummy.Parent = world
-	local dummyBrainrot = Conveyor.buildCharacter(Config.getCharacter("Sir Quackington"), "None", 5)
-	dummyBrainrot:SetAttribute("OwnerId", 999999999)
-	dummyBrainrot:SetAttribute("SlotIndex", 1)
-	dummyBrainrot.Parent = bases[2].folder
-	dummyBrainrot:PivotTo(CFrame.new(-28 + 2.5, 2.4, 60))
-end
-
-local function setupPlayer(player)
-	local base = bases[nextBase]
-	if not base then
-		base = bases[1]
-	end
-	nextBase += 1
-	if nextBase > #bases then
-		nextBase = 1
-	end
-	base.claimedBy = player
-	base.signLabel.Text = "BASE — " .. player.Name
-	Economy.createState(player, base.folder, base.center, base.color)
-	player.CharacterAdded:Connect(function(char)
-		local humanoid = char:WaitForChild("Humanoid")
-		humanoid.WalkSpeed = 16
-		Slap.giveTool(player)
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function()
+		task.wait(0.5)
+		Economy.refreshAttributes(player)
 	end)
-	if player.Character then
-		Slap.giveTool(player)
-	end
-end
+end)
 
-local function removePlayer(player)
-	local state = Economy.getState(player)
-	if state then
-		for _, model in ipairs(state.owned) do
-			if model.Parent then
-				model:Destroy()
-			end
-		end
-		for i, base in ipairs(bases) do
-			if base.claimedBy == player then
-				base.claimedBy = nil
-				base.signLabel.Text = "BASE " .. tostring(i)
-				Steal.paintLock(state, false)
-			end
-		end
-	end
-	Economy.removeState(player)
-end
-
-local function setupRemotes()
-	local remotes = Instance.new("Folder")
-	remotes.Name = "Remotes"
-	remotes.Parent = ReplicatedStorage
-	for _, name in ipairs({ "Banner", "FloatText", "BuyFx", "LockBase", "Rebirth" }) do
-		local ev = Instance.new("RemoteEvent")
-		ev.Name = name
-		ev.Parent = remotes
-	end
-	Economy.setRemotes(remotes)
-	remotes.LockBase.OnServerEvent:Connect(function(player)
-		Steal.lockBase(player)
-	end)
-	remotes.Rebirth.OnServerEvent:Connect(function(player)
-		Rebirth.applyRebirth(player)
-	end)
-end
-
-buildWorld()
-setupRemotes()
+Economy.start()
 Conveyor.start()
-Steal.deliverCheck()
-task.spawn(function()
-	Wave.tick()
-end)
-task.spawn(function()
-	while true do
-		task.wait(1)
-		Economy.collectIncome()
-	end
-end)
-task.spawn(function()
-	task.wait(2)
-	Conveyor.spawnBrainrot()
-	Conveyor.spawnBrainrot()
-end)
+Wave.start()
+Steal.start()
+Slap.start()
 
-Players.PlayerAdded:Connect(setupPlayer)
-Players.PlayerRemoving:Connect(removePlayer)
-for _, player in ipairs(Players:GetPlayers()) do
-	setupPlayer(player)
-end
+print("Brainrot Blitz server ready: 16 brainrots, 8 bases, conveyor live.")
