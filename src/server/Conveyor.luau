@@ -123,7 +123,7 @@ function Conveyor.buildCharacter(def, mutation, rate)
 
 	local click = Instance.new("ClickDetector")
 	click.MaxActivationDistance = 40
-	click.Parent = body
+	click.Parent = model
 	click.MouseClick:Connect(function(player)
 		local Economy = require(script.Parent.Economy)
 		if Economy.buyBrainrot(player, model) then
