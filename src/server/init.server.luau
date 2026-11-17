@@ -75,7 +75,6 @@ function buildWorld()
 	Lighting.Ambient = Color3.fromRGB(200, 190, 170)
 	Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 160)
 	Lighting.GlobalShadows = true
-	Lighting.Technology = Enum.Technology.ShadowMap
 
 	-- Green baseplate plaza
 	part("Baseplate", Vector3.new(260, 2, 260), Vector3.new(0, -1, 0), Color3.fromRGB(110, 200, 90), Enum.Material.Grass, world).CanCollide = true
