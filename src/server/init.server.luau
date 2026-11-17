@@ -8,12 +8,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
 
 local Config = require(ReplicatedStorage.Shared.Config)
-local Conveyor = require(script.Parent.Conveyor)
-local Economy = require(script.Parent.Economy)
-local Wave = require(script.Parent.Wave)
-local Steal = require(script.Parent.Steal)
-local Rebirth = require(script.Parent.Rebirth)
-local Slap = require(script.Parent.Slap)
+local Conveyor = require(script.Conveyor)
+local Economy = require(script.Economy)
+local Wave = require(script.Wave)
+local Steal = require(script.Steal)
+local Rebirth = require(script.Rebirth)
+local Slap = require(script.Slap)
 
 local BASE_CENTERS = {
 	Vector3.new(28, 0, 60), Vector3.new(-28, 0, 60),
