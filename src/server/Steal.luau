@@ -213,6 +213,7 @@ function Steal.deliverCarried(player)
 	local bases = workspace:WaitForChild("Bases")
 	local base = bases:FindFirstChild("Base" .. state.baseIndex)
 	if base then
+		model.Parent = base
 		local slot = #state.owned
 		local spot = base:FindFirstChild("Slot" .. slot)
 		if spot then

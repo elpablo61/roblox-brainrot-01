@@ -99,6 +99,7 @@ function Economy.buyBrainrot(player, model)
 	local bases = workspace:WaitForChild("Bases")
 	local base = bases:FindFirstChild("Base" .. state.baseIndex)
 	if base then
+		model.Parent = base
 		local spot = base:FindFirstChild("Slot" .. slot)
 		local target = spot and spot.Position or (base:GetAttribute("Center") and Vector3.new(base:GetAttribute("Center").X, 2, base:GetAttribute("Center").Z) or Vector3.new(0, 2, 0))
 		model:PivotTo(CFrame.new(target + Vector3.new(0, 1.3, 0)))
