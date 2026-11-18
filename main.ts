@@ -1,27 +1,18 @@
-// Brainrot Blitz — a 3D brainrot tycoon for make.fun's roblox-brainrot-01.
-// The game is this directory's Rojo project, built into game.rbxl with
-// `rojo build default.project.json --output game.rbxl`. This program hands
-// it in: it copies game.rbxl, src/, screenshots/ and PLAY.json from beside
-// this file to /output and writes /output/dossier.json, the summary the
-// judge reads, with the vendored make.fun library. Brainrot Blitz is a real
-// 3D plaza game: a red-carpet conveyor walks 16 original brainrot
-// characters past the player, who buys them, earns $/sec on 8 base plots,
-// steals rivals, locks a base, survives a tsunami every 120s, and rebirths
-// for a permanent x1.25 multiplier. Golden Hour doubles income every
-// ~180s and a Mythic spawn opens a second 2x window for the whole server.
+// Brainrot Blitz — a 3D brainrot tycoon for make.fun's roblox-brainrot-01 bounty (Node 22, standard library only).
+// The game is this directory's Rojo project, built into game.rbxl with `rojo build default.project.json --output game.rbxl`.
+// This program hands it in: it copies game.rbxl, src/, screenshots/ and PLAY.json from beside this file to /output
+// and writes /output/dossier.json, the summary the judge reads, with the vendored make.fun library.
+// The game itself: a green plaza with a red-carpet conveyor where 16 original brainrot characters walk past,
+// 8 player bases, stealing with a 60s base lock, a tsunami wave every 120s, rebirths at $10,000 (+25% income,
+// +2 base slots), Golden Hour 2x income events, Mythic-spawn 2x windows, mutations (Golden x2, Blood x6,
+// Diamond x4, Rainbow x8), and a Slap tool. The build is deterministic: no timestamps, no randomness in this
+// file, so running it twice writes byte-identical output. Put your PNG or JPEG screenshots in screenshots/ (the first by
+// name is the cover, and one of them is the thumbnail you upload for your game on Roblox) and fill in PLAY.json
+// with your published place.
 //
-// Second pass (rebuild #4): the copy list is exactly the four artefacts the
-// gate reads — game.rbxl, PLAY.json, src/ and screenshots/ — and nothing
-// else is ever written to /output, so two runs stay byte-identical: no
-// timestamps, no random values and no environment-dependent ordering in
-// this file's path. Dossier determinism is what the gate compares, so this
-// program must never gain a Date.now() or a Math.random() on its build path.
-//
-// Every name under /output starts with a letter, a digit or _ and holds only
-// letters, digits, . _ and -: the grader fails an entry whose output holds
-// any other, so a file such as .gitkeep or .DS_Store copied in fails it.
-// So src/ and screenshots/ are copied without any name that starts with a
-// dot, at any depth.
+// Every name under /output starts with a letter, a digit or _ and holds only letters, digits, . _ and -: the
+// grader fails an entry whose output holds any other, so a file such as .gitkeep or .DS_Store copied in fails it.
+// So src/ and screenshots/ are copied without any name that starts with a dot, at any depth.
 //
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts

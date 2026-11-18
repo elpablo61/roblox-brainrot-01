@@ -1,306 +1,172 @@
--- Brainrot Blitz server init: builds the 3D world, wires the modules,
--- remotes and player lifecycle. Lighting technology is set in
--- default.project.json, never here (writing it from a script is forbidden).
-
+-- Brainrot Blitz server init: builds the 3D world and wires every module.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
 
-local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
-local Conveyor = require(script.Conveyor)
-local Economy = require(script.Economy)
-local Wave = require(script.Wave)
-local Steal = require(script.Steal)
-local Rebirth = require(script.Rebirth)
-local Slap = require(script.Slap)
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Conveyor = require(script:WaitForChild("Conveyor"))
+local Economy = require(script:WaitForChild("Economy"))
+local Wave = require(script:WaitForChild("Wave"))
+local Steal = require(script:WaitForChild("Steal"))
+local Rebirth = require(script:WaitForChild("Rebirth"))
+local Slap = require(script:WaitForChild("Slap"))
 
-local function buildWorld()
+local BASE_COLORS = {
+	Color3.fromRGB(255, 80, 80), Color3.fromRGB(80, 140, 255), Color3.fromRGB(80, 220, 120),
+	Color3.fromRGB(255, 200, 40), Color3.fromRGB(170, 80, 255), Color3.fromRGB(255, 140, 200),
+	Color3.fromRGB(80, 220, 220), Color3.fromRGB(255, 140, 60),
+}
+
+local function makePart(name, size, cframe, color, material, parent)
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Size = size
+	p.CFrame = cframe
+	p.Color = color
+	p.Material = material or Enum.Material.SmoothPlastic
+	p.Anchored = true
+	p.Parent = parent or workspace
+	return p
+end
+
+local function makeBoard(name, size, cframe, lines, textSize, parent)
+	local board = makePart(name, size, cframe, Color3.fromRGB(120, 80, 40), Enum.Material.Wood, parent)
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Front
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 12
+	gui.Parent = board
+	local label = Instance.new("TextLabel")
+	label.Name = "Label"
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundColor3 = Color3.fromRGB(30, 20, 10)
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.TextStrokeTransparency = 0
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = textSize or 28
+	label.TextWrapped = true
+	label.Text = table.concat(lines, "\n")
+	label.Parent = gui
+	return board
+end
+
+function buildWorld()
 	Lighting.ClockTime = 14
 	Lighting.Brightness = 2
-	Lighting.Ambient = Color3.fromRGB(120, 120, 120)
-	Lighting.OutdoorAmbient = Color3.fromRGB(160, 160, 160)
+	Lighting.Ambient = Color3.fromRGB(150, 150, 150)
+	Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 180)
 	Lighting.GlobalShadows = true
 
-	-- Baseplate comes from default.project.json (CFrame, not Position:
-	-- Rojo ignores Position on the baseplate and it ends up buried).
+	makePart("Baseplate", Vector3.new(512, 20, 512), CFrame.new(0, -10, 0), Color3.fromRGB(80, 200, 90), Enum.Material.Grass)
+	makePart("ConveyorCarpet", Vector3.new(120, 1, 12), CFrame.new(0, 0.5, 0), Color3.fromRGB(200, 30, 40), Enum.Material.Carpet)
+	makePart("RailLeft", Vector3.new(120, 1, 1), CFrame.new(0, 1, -6.5), Color3.fromRGB(255, 215, 0), Enum.Material.Neon)
+	makePart("RailRight", Vector3.new(120, 1, 1), CFrame.new(0, 1, 6.5), Color3.fromRGB(255, 215, 0), Enum.Material.Neon)
 
-	local carpet = Instance.new("Part")
-	carpet.Name = "ConveyorCarpet"
-	carpet.Anchored = true
-	carpet.Size = Vector3.new(140, 1, 10)
-	carpet.Color = Color3.fromRGB(200, 30, 40)
-	carpet.Material = Enum.Material.Carpet
-	carpet.CFrame = CFrame.new(0, 0.5, Config.BELT_Z)
-	carpet.Parent = workspace
-	for i = 1, 2 do
-		local rail = Instance.new("Part")
-		rail.Name = "ConveyorRail"
-		rail.Anchored = true
-		rail.Size = Vector3.new(140, 1, 1)
-		rail.Color = Color3.fromRGB(255, 210, 40)
-		rail.CFrame = CFrame.new(0, 1, Config.BELT_Z + (i == 1 and 5.5 or -5.5))
-		rail.Parent = workspace
+	for i, center in ipairs(Economy.BASE_CENTERS) do
+		local color = BASE_COLORS[i]
+		makePart("BaseFloor" .. i, Vector3.new(16, 1, 16), CFrame.new(center.X, 0.5, center.Z), color, Enum.Material.SmoothPlastic)
+		makePart("BaseFrame" .. i, Vector3.new(17, 0.6, 17), CFrame.new(center.X, 0.2, center.Z), Color3.fromRGB(255, 255, 255), Enum.Material.SmoothPlastic)
+		local wallH = 1.5
+		makePart("WallN" .. i, Vector3.new(16, wallH, 1), CFrame.new(center.X, wallH / 2 + 1, center.Z - 7.5), color)
+		makePart("WallW" .. i, Vector3.new(1, wallH, 16), CFrame.new(center.X - 7.5, wallH / 2 + 1, center.Z), color)
+		makePart("WallE" .. i, Vector3.new(1, wallH, 16), CFrame.new(center.X + 7.5, wallH / 2 + 1, center.Z), color)
+		local sign = makeBoard("BaseSign" .. i, Vector3.new(10, 3, 0.5), CFrame.new(center.X, 4, center.Z - 7.5), { "BASE " .. i }, 40)
+		sign.Parent = workspace
 	end
 
-	local function makeBoard(name, pos, size, title, lines, titleColor)
-		local board = Instance.new("Part")
-		board.Name = name
-		board.Anchored = true
-		board.Size = size
-		board.Color = Color3.fromRGB(120, 80, 40)
-		board.CFrame = CFrame.new(pos) * CFrame.Angles(0, math.rad(180), 0)
-		board.Parent = workspace
-		local gui = Instance.new("SurfaceGui")
-		gui.Face = Enum.NormalId.Front
-		gui.Parent = board
-		local titleLabel = Instance.new("TextLabel")
-		titleLabel.Name = "BoardTitle"
-		titleLabel.Size = UDim2.new(1, 0, 0, 50)
-		titleLabel.BackgroundTransparency = 1
-		titleLabel.Text = title
-		titleLabel.TextColor3 = titleColor
-		titleLabel.TextScaled = true
-		titleLabel.Font = Enum.Font.GothamBold
-		titleLabel.Parent = gui
-		local body = Instance.new("TextLabel")
-		body.Name = "BoardBody"
-		body.Position = UDim2.new(0, 0, 0, 50)
-		body.Size = UDim2.new(1, 0, 1, -50)
-		body.BackgroundTransparency = 1
-		body.Text = table.concat(lines, "\n")
-		body.TextColor3 = Color3.fromRGB(255, 255, 255)
-		body.TextScaled = true
-		body.Font = Enum.Font.GothamBold
-		body.TextWrapped = true
-		body.Parent = gui
-		return board
-	end
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Size = Vector3.new(10, 1, 10)
+	spawn.CFrame = CFrame.new(0, 0.5, 76)
+	spawn.Color = Color3.fromRGB(255, 255, 255)
+	spawn.Anchored = true
+	spawn.Parent = workspace
 
-	makeBoard("HowToPlayBoard", Vector3.new(-20, 5, 30), Vector3.new(24, 10, 1), "HOW TO PLAY", {
+	makePart("SignPostL", Vector3.new(1, 10, 1), CFrame.new(-8, 5, 62), Color3.fromRGB(90, 60, 30), Enum.Material.Wood)
+	makePart("SignPostR", Vector3.new(1, 10, 1), CFrame.new(8, 5, 62), Color3.fromRGB(90, 60, 30), Enum.Material.Wood)
+	makeBoard("MainSign", Vector3.new(18, 5, 0.5), CFrame.new(0, 11, 62), { "BRAINROT BLITZ" }, 48)
+
+	makeBoard("HowToBoard", Vector3.new(16, 8, 0.5), CFrame.new(-18, 4.5, 48), {
+		"HOW TO PLAY",
 		"BUY brainrots - EARN $/sec",
 		"STEAL rivals - LOCK your base",
 		"SURVIVE the tsunami",
 		"REBIRTH x1.25 - GOLDEN HOUR 2x",
-	}, Color3.fromRGB(255, 210, 40))
-	makeBoard("NextTierBoard", Vector3.new(30, 5, 12), Vector3.new(20, 8, 1), "NEXT TIER", {
-		"EPIC - Captain Noodle",
-		"$60/s - $800",
-		"Buy rarer, earn faster!",
-	}, Color3.fromRGB(120, 220, 255))
-	makeBoard("StealBoard", Vector3.new(-40, 5, -20), Vector3.new(18, 8, 1), "STEAL!", {
-		"Click a rival brainrot",
-		"Carry it home - SLAP drops it",
-		"LOCK stops thieves 60s",
-	}, Color3.fromRGB(255, 90, 90))
+	}, 26)
 
-	local sign = Instance.new("Part")
-	sign.Name = "BlitzSign"
-	sign.Anchored = true
-	sign.Size = Vector3.new(30, 8, 1)
-	sign.Color = Color3.fromRGB(255, 210, 40)
-	sign.CFrame = CFrame.new(0, 9, 45) * CFrame.Angles(0, math.rad(180), 0)
-	sign.Parent = workspace
-	local signGui = Instance.new("SurfaceGui")
-	signGui.Face = Enum.NormalId.Front
-	signGui.Parent = sign
-	local signText = Instance.new("TextLabel")
-	signText.Size = UDim2.fromScale(1, 1)
-	signText.BackgroundTransparency = 1
-	signText.Text = "BRAINROT BLITZ"
-	signText.TextColor3 = Color3.fromRGB(180, 30, 30)
-	signText.TextScaled = true
-	signText.Font = Enum.Font.GothamBlack
-	signText.Parent = signGui
-	for _, dx in ipairs({ -14, 14 }) do
-		local post = Instance.new("Part")
-		post.Name = "SignPost"
-		post.Anchored = true
-		post.Size = Vector3.new(1, 9, 1)
-		post.Color = Color3.fromRGB(90, 60, 30)
-		post.CFrame = CFrame.new(dx, 4.5, 45)
-		post.Parent = workspace
-	end
+	local nextBoard = makeBoard("NextTierBoard", Vector3.new(12, 4, 0.5), CFrame.new(-10, 3, 10), { "NEXT: COMMON - Sir Quackington - $5/s - BUY $50" }, 24)
+	nextBoard.Parent = workspace
 
-	for i, base in ipairs(Config.BASES) do
-		local floor = Instance.new("Part")
-		floor.Name = "BaseFloor" .. tostring(i)
-		floor.Anchored = true
-		floor.Size = Vector3.new(26, 1, 26)
-		floor.Color = base.color
-		floor.Material = Enum.Material.SmoothPlastic
-		floor.CFrame = CFrame.new(base.position + Vector3.new(0, 0.5, 0))
-		floor.Parent = workspace
-		for tx = 1, 5 do
-			for tz = 1, 5 do
-				local tile = Instance.new("Part")
-				tile.Name = "BaseTile"
-				tile.Anchored = true
-				tile.Size = Vector3.new(4, 0.3, 4)
-				tile.Color = Color3.fromRGB(255, 255, 255)
-				tile.CFrame = CFrame.new(base.position + Vector3.new((tx - 3) * 4.5, 1.1, (tz - 3) * 4.5))
-				tile.Parent = workspace
-			end
-		end
-		for _, wx in ipairs({ -13, 13 }) do
-			local wall = Instance.new("Part")
-			wall.Name = "BaseWall"
-			wall.Anchored = true
-			wall.Size = Vector3.new(1, 4, 26)
-			wall.Color = base.color
-			wall.Transparency = 0.4
-			wall.CFrame = CFrame.new(base.position + Vector3.new(wx, 2, 0))
-			wall.Parent = workspace
-		end
-		local labelPart = Instance.new("Part")
-		labelPart.Name = "BaseLabelPart"
-		labelPart.Anchored = true
-		labelPart.Size = Vector3.new(10, 4, 1)
-		labelPart.Transparency = 1
-		labelPart.CFrame = CFrame.new(base.position + Vector3.new(0, 7, -13))
-		labelPart.Parent = workspace
-		local labelGui = Instance.new("BillboardGui")
-		labelGui.Size = UDim2.fromOffset(200, 50)
-		labelGui.AlwaysOnTop = true
-		labelGui.Parent = labelPart
-		local labelText = Instance.new("TextLabel")
-		labelText.Size = UDim2.fromScale(1, 1)
-		labelText.BackgroundTransparency = 0.5
-		labelText.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		labelText.Text = "BASE " .. tostring(i)
-		labelText.TextColor3 = Color3.fromRGB(255, 255, 255)
-		labelText.TextScaled = true
-		labelText.Font = Enum.Font.GothamBold
-		labelText.Parent = labelGui
-		local spawn = Instance.new("SpawnLocation")
-		spawn.Name = "BaseSpawn" .. tostring(i)
-		spawn.Anchored = true
-		spawn.Size = Vector3.new(6, 1, 6)
-		spawn.Color = base.color
-		spawn.CFrame = CFrame.new(base.position + Vector3.new(0, 0.5, 0))
-		spawn.Enabled = false
-		spawn.Parent = workspace
-	end
-	local plazaSpawn = Instance.new("SpawnLocation")
-	plazaSpawn.Name = "PlazaSpawn"
-	plazaSpawn.Anchored = true
-	plazaSpawn.Size = Vector3.new(6, 1, 6)
-	plazaSpawn.Color = Color3.fromRGB(255, 255, 255)
-	plazaSpawn.CFrame = CFrame.new(0, 0.5, 40)
-	plazaSpawn.Parent = workspace
-
-	for i = 1, 8 do
-		local angle = (i - 1) * math.pi / 4
-		local tx = math.cos(angle) * 95
-		local tz = math.sin(angle) * 95
-		local trunk = Instance.new("Part")
-		trunk.Name = "TreeTrunk"
-		trunk.Anchored = true
-		trunk.Size = Vector3.new(2, 8, 2)
-		trunk.Color = Color3.fromRGB(120, 80, 40)
-		trunk.CFrame = CFrame.new(tx, 4, tz)
-		trunk.Parent = workspace
-		local leaves = Instance.new("Part")
-		leaves.Name = "TreeLeaves"
+	local treeSpots = { Vector3.new(70, 0, 70), Vector3.new(-70, 0, 70), Vector3.new(70, 0, -70), Vector3.new(-70, 0, -70), Vector3.new(0, 0, -70), Vector3.new(-70, 0, 0), Vector3.new(70, 0, 20), Vector3.new(-70, 0, -20), Vector3.new(20, 0, -70), Vector3.new(-20, 0, 70) }
+	for _, spot in ipairs(treeSpots) do
+		makePart("Trunk", Vector3.new(2, 8, 2), CFrame.new(spot.X, 4, spot.Z), Color3.fromRGB(120, 70, 30), Enum.Material.Wood)
+		local leaves = makePart("Leaves", Vector3.new(7, 7, 7), CFrame.new(spot.X, 10, spot.Z), Color3.fromRGB(40, 160, 60), Enum.Material.SmoothPlastic)
 		leaves.Shape = Enum.PartType.Ball
-		leaves.Anchored = true
-		leaves.Size = Vector3.new(10, 10, 10)
-		leaves.Color = Color3.fromRGB(40, 180, 60)
-		leaves.CFrame = CFrame.new(tx, 11, tz)
-		leaves.Parent = workspace
-		local lampPost = Instance.new("Part")
-		lampPost.Name = "LampPost"
-		lampPost.Anchored = true
-		lampPost.Size = Vector3.new(1, 8, 1)
-		lampPost.Color = Color3.fromRGB(60, 60, 60)
-		lampPost.CFrame = CFrame.new(-tx * 0.6, 4, tz * 0.6)
-		lampPost.Parent = workspace
-		local lampLight = Instance.new("PointLight")
-		lampLight.Color = Color3.fromRGB(255, 220, 120)
-		lampLight.Range = 20
-		lampLight.Parent = lampPost
+	end
+
+	local lampSpots = { Vector3.new(20, 0, 20), Vector3.new(-20, 0, 20), Vector3.new(20, 0, -20), Vector3.new(-20, 0, -20), Vector3.new(0, 0, 30), Vector3.new(0, 0, -30), Vector3.new(30, 0, 0), Vector3.new(-30, 0, 0) }
+	for _, spot in ipairs(lampSpots) do
+		makePart("LampPole", Vector3.new(1, 9, 1), CFrame.new(spot.X, 4.5, spot.Z), Color3.fromRGB(60, 60, 60), Enum.Material.Metal)
+		local lampHead = makePart("LampHead", Vector3.new(2, 1, 2), CFrame.new(spot.X, 9.5, spot.Z), Color3.fromRGB(255, 240, 150), Enum.Material.Neon)
+		local light = Instance.new("PointLight")
+		light.Color = Color3.fromRGB(255, 240, 150)
+		light.Range = 18
+		light.Brightness = 1
+		light.Parent = lampHead
 	end
 
 	for i = 1, 6 do
-		local cloud = Instance.new("Part")
-		cloud.Name = "Cloud"
-		cloud.Shape = Enum.PartType.Ball
-		cloud.Anchored = true
-		cloud.Size = Vector3.new(24, 8, 12)
-		cloud.Color = Color3.fromRGB(255, 255, 255)
-		cloud.Transparency = 0.3
-		cloud.CFrame = CFrame.new(-80 + i * 32, 45, -60 + (i % 2) * 40)
-		cloud.Parent = workspace
+		local cloud = makePart("Cloud" .. i, Vector3.new(24, 3, 12), CFrame.new(-80 + i * 30, 45 + (i % 3) * 5, -60 + (i % 2) * 100), Color3.fromRGB(255, 255, 255), Enum.Material.SmoothPlastic)
+		cloud.Transparency = 0.15
 	end
 
-	for i = 1, 20 do
-		local fence = Instance.new("Part")
-		fence.Name = "FencePost"
-		fence.Anchored = true
-		fence.Size = Vector3.new(1, 3, 1)
-		fence.Color = Color3.fromRGB(255, 255, 255)
-		fence.CFrame = CFrame.new(-95 + i * 10, 1.5, 95)
-		fence.Parent = workspace
-	end
+	local wall = makePart("TsunamiWall", Vector3.new(170, 30, 2), CFrame.new(-95, 15, 0), Color3.fromRGB(60, 140, 255), Enum.Material.Glass)
+	wall.Transparency = 1
+	return wall
 end
 
 local function setupRemotes()
-	local buyEffect = Instance.new("RemoteEvent")
-	buyEffect.Name = "BuyEffectEvent"
-	buyEffect.Parent = ReplicatedStorage
-	local lockEvent = Instance.new("RemoteEvent")
-	lockEvent.Name = "LockEvent"
-	lockEvent.Parent = ReplicatedStorage
-	lockEvent.OnServerEvent:Connect(function(player)
-		Steal.lockBase(player)
-	end)
-	local rebirthEvent = Instance.new("RemoteEvent")
-	rebirthEvent.Name = "RebirthEvent"
-	rebirthEvent.Parent = ReplicatedStorage
-	rebirthEvent.OnServerEvent:Connect(function(player)
-		Rebirth.applyRebirth(player)
-	end)
-	local buyEvent = Instance.new("RemoteEvent")
-	buyEvent.Name = "BuyEvent"
-	buyEvent.Parent = ReplicatedStorage
-	buyEvent.OnServerEvent:Connect(function(player, model)
-		if typeof(model) ~= "Instance" or not model:IsA("Model") then return end
-		if not model:GetAttribute("CharName") then return end
-		if not model:IsDescendantOf(workspace) then return end
-		Economy.buyBrainrot(player, model)
-	end)
+	local remotes = Instance.new("Folder")
+	remotes.Name = "Remotes"
+	remotes.Parent = ReplicatedStorage
+	for _, name in ipairs({ "LockEvent", "RebirthEvent", "HudEvent" }) do
+		local ev = Instance.new("RemoteEvent")
+		ev.Name = name
+		ev.Parent = remotes
+	end
+	local gs = Instance.new("Folder")
+	gs.Name = "GameState"
+	gs.Parent = ReplicatedStorage
+	gs:SetAttribute("WaveTimer", Config.WAVE_EVERY)
+	gs:SetAttribute("WavePhase", "calm")
+	gs:SetAttribute("GoldenLeft", 0)
+	gs:SetAttribute("MythicLeft", 0)
 end
 
-local function onPlayerAdded(player)
-	Economy.registerPlayer(player)
-	player.CharacterAdded:Connect(function(_character)
-		task.wait(0.5)
-		Slap.giveTool(player)
-		local state = Economy.Players[player]
-		if state then
-			local base = Config.BASES[state.baseIndex]
-			for _try = 1, 3 do
-				local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-				if root then
-					root.CFrame = CFrame.new(base.position + Vector3.new(0, 4, 0))
-					task.wait(1)
-					if (root.Position - base.position).Magnitude < 10 then break end
-				else
-					task.wait(1)
-				end
-			end
-		end
-	end)
-end
-
-buildWorld()
+local wallPart = buildWorld()
 setupRemotes()
-Players.PlayerAdded:Connect(onPlayerAdded)
+
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+remotes:WaitForChild("LockEvent").OnServerEvent:Connect(function(player)
+	Steal.lockBase(player)
+end)
+remotes:WaitForChild("RebirthEvent").OnServerEvent:Connect(function(player)
+	Rebirth.applyRebirth(player)
+end)
+
+Players.PlayerAdded:Connect(function(player)
+	Economy.addPlayer(player)
+end)
 Players.PlayerRemoving:Connect(function(player)
-	Steal.onPlayerRemoving(player)
 	Economy.removePlayer(player)
 end)
-for _, player in ipairs(Players:GetPlayers()) do onPlayerAdded(player) end
-Economy.startLoops()
+for _, player in ipairs(Players:GetPlayers()) do
+	Economy.addPlayer(player)
+end
+
+Slap.hookSpawns()
 Conveyor.start()
-Wave.start()
+Wave.startLoop(wallPart)
+Steal.startDeliveryLoop()
+task.spawn(Economy.collectIncome)
+
 print("Brainrot Blitz server ready: 16 brainrots, 8 bases, conveyor live.")
