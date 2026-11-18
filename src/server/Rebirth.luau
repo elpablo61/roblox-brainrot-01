@@ -1,4 +1,6 @@
--- Rebirth resets coins for a permanent income multiplier and +2 base slots.
+-- Rebirth: spend $10,000 to reset coins and gain a permanent +25% income
+-- multiplier plus 2 extra base slots. Owned brainrots are kept.
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
@@ -12,18 +14,22 @@ function Rebirth.applyRebirth(player)
 		return false
 	end
 	if state.coins < Config.REBIRTH_COST then
-		Economy.banner(player, "REBIRTH costs $" .. Config.REBIRTH_COST .. " - you have $" .. math.floor(state.coins), Color3.fromRGB(255, 80, 80))
 		return false
 	end
-	state.coins = 0
+	state.coins = Config.START_COINS
 	state.rebirths += 1
-	state.mult = Config.REBIRTH_MULT ^ state.rebirths
-	state.slots += Config.SLOTS_PER_REBIRTH
 	Economy.refreshAttributes(player)
-	Economy.banner(player, "REBIRTH x" .. state.mult .. "! +" .. Config.SLOTS_PER_REBIRTH .. " slots!", Color3.fromRGB(255, 215, 0))
-	local remotes = ReplicatedStorage:WaitForChild("Remotes")
-	remotes:WaitForChild("HudEvent"):FireClient(player, "Rebirth", state.rebirths)
+	local mult = 1 + Config.REBIRTH_MULT * state.rebirths
+	local remotes = ReplicatedStorage:WaitForChild("BrainrotRemotes")
+	remotes:WaitForChild("Banner"):FireClient(player, "REBIRTH! x" .. mult .. " income forever! Slots +" .. Config.SLOTS_PER_REBIRTH .. "!", "gold", 5)
 	return true
+end
+
+function Rebirth.start()
+	local remotes = ReplicatedStorage:WaitForChild("BrainrotRemotes")
+	remotes:WaitForChild("RebirthRequest").OnServerEvent:Connect(function(player)
+		Rebirth.applyRebirth(player)
+	end)
 end
 
 return Rebirth

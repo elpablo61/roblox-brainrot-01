@@ -1,81 +1,87 @@
--- Effects plays buy, wave, rebirth and Golden Hour feedback: particles, flashes, banners.
+-- Effects: visual feedback for buys, waves and events. No uploaded assets:
+-- particles, tweens and screen flashes only, so the feedback survives on
+-- any account that opens the place.
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local gameState = ReplicatedStorage:WaitForChild("GameState")
 
 local Effects = {}
 
-function Effects.playBuyEffect(position)
-	if not position then
+function Effects.playBuyEffect(model)
+	if not model or not model.PrimaryPart then
 		return
 	end
-	local anchor = Instance.new("Part")
-	anchor.Name = "BuyBurst"
-	anchor.Size = Vector3.new(0.5, 0.5, 0.5)
-	anchor.CFrame = CFrame.new(position + Vector3.new(0, 3, 0))
-	anchor.Anchored = true
-	anchor.CanCollide = false
-	anchor.Transparency = 1
-	anchor.Parent = workspace
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/fire_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(255, 215, 0))
-	emitter.Size = NumberSequence.new(1.2)
-	emitter.Lifetime = NumberRange.new(0.6, 1)
-	emitter.Rate = 60
-	emitter.Speed = NumberRange.new(8, 16)
-	emitter.Parent = anchor
-	task.delay(1.5, function()
-		anchor:Destroy()
+	local burst = Instance.new("ParticleEmitter")
+	burst.Color = ColorSequence.new(Color3.fromRGB(255, 215, 0))
+	burst.Size = NumberSequence.new(1.2)
+	burst.Lifetime = NumberRange.new(0.6)
+	burst.Rate = 60
+	burst.Speed = NumberRange.new(12)
+	burst.SpreadAngle = Vector2.new(180, 180)
+	burst.Parent = model.PrimaryPart
+	task.delay(1, function()
+		burst.Enabled = false
+		task.wait(1)
+		burst:Destroy()
 	end)
-end
-
-function Effects.playWaveEffect()
-	local gui = player.PlayerGui:FindFirstChild("BrainrotHUD")
-	if not gui then
-		return
-	end
-	local flash = Instance.new("Frame")
-	flash.Name = "WaveFlash"
-	flash.Size = UDim2.new(1, 0, 1, 0)
-	flash.BackgroundColor3 = Color3.fromRGB(60, 140, 255)
-	flash.BackgroundTransparency = 0.7
-	flash.Parent = gui
-	local tween = TweenService:Create(flash, TweenInfo.new(1.2), { BackgroundTransparency = 1 })
+	local startSize = model.PrimaryPart.Size
+	local goal = { Size = startSize * 1.25 }
+	local tween = TweenService:Create(model.PrimaryPart, TweenInfo.new(0.25), goal)
 	tween:Play()
 	tween.Completed:Connect(function()
-		flash:Destroy()
+		TweenService:Create(model.PrimaryPart, TweenInfo.new(0.25), { Size = startSize }):Play()
 	end)
 end
 
-function Effects.playGoldenEffect()
-	local gui = player.PlayerGui:FindFirstChild("BrainrotHUD")
-	if not gui then
-		return
-	end
-	local flash = Instance.new("Frame")
-	flash.Name = "GoldenFlash"
-	flash.Size = UDim2.new(1, 0, 1, 0)
-	flash.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
-	flash.BackgroundTransparency = 0.75
-	flash.Parent = gui
-	local tween = TweenService:Create(flash, TweenInfo.new(1.5), { BackgroundTransparency = 1 })
-	tween:Play()
-	tween.Completed:Connect(function()
-		flash:Destroy()
-	end)
-end
+local flash = Instance.new("Frame")
+flash.Name = "WaveFlash"
+flash.Size = UDim2.fromScale(1, 1)
+flash.BackgroundColor3 = Color3.fromRGB(40, 140, 255)
+flash.BackgroundTransparency = 1
+flash.BorderSizePixel = 0
+flash.Parent = playerGui:WaitForChild("BrainrotHUD")
 
-local remotes = ReplicatedStorage:WaitForChild("Remotes")
-remotes:WaitForChild("HudEvent").OnClientEvent:Connect(function(kind, a, b)
-	if kind == "Buy" then
-		Effects.playBuyEffect(b)
-	elseif kind == "Wave" then
-		Effects.playWaveEffect()
-	elseif kind == "Golden" then
-		Effects.playGoldenEffect()
+local lastOwned = 0
+local lastPhase = "calm"
+
+task.spawn(function()
+	while true do
+		task.wait(0.5)
+		local owned = player:GetAttribute("OwnedCount") or 0
+		if owned > lastOwned then
+			local baseIndex = player:GetAttribute("BaseIndex") or 0
+			local bases = workspace:FindFirstChild("Bases")
+			local base = bases and bases:FindFirstChild("Base" .. baseIndex)
+			if base then
+				local newest = nil
+				for _, desc in ipairs(base:GetDescendants()) do
+					if desc:IsA("Model") and desc:GetAttribute("OwnerId") == player.UserId then
+						newest = desc
+					end
+				end
+				if newest then
+					Effects.playBuyEffect(newest)
+				end
+			end
+		end
+		lastOwned = owned
+		local phase = gameState:GetAttribute("WavePhase") or "calm"
+		if phase == "sweep" and lastPhase ~= "sweep" then
+			flash.BackgroundTransparency = 0.6
+			TweenService:Create(flash, TweenInfo.new(1.5), { BackgroundTransparency = 1 }):Play()
+		end
+		if phase == "warning" and lastPhase ~= "warning" then
+			flash.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+			flash.BackgroundTransparency = 0.75
+			TweenService:Create(flash, TweenInfo.new(1), { BackgroundTransparency = 1 }):Play()
+			flash.BackgroundColor3 = Color3.fromRGB(40, 140, 255)
+		end
+		lastPhase = phase
 	end
 end)
 

@@ -1,118 +1,163 @@
--- Wave runs the tsunami cycle, Golden Hour, and the Mythic 2x window timers.
+-- Wave: the 120-second tsunami countdown, the 20-second warning, the wall
+-- sweep that knocks players outside their base back and drops 10% of their
+-- coins, plus the Golden Hour and Mythic 2x income events. First function
+-- is the tsunami itself.
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
 local Wave = {}
+local running = false
 local wall = nil
-local hitThisWave = {}
 
-function Wave.startTsunami()
-	local gs = ReplicatedStorage:WaitForChild("GameState")
-	local Economy = require(script.Parent:WaitForChild("Economy"))
-	local Steal = require(script.Parent:WaitForChild("Steal"))
-	Economy.bannerAll("TSUNAMI IN 20s - RUN HOME!", Color3.fromRGB(80, 160, 255))
-	gs:SetAttribute("WavePhase", "warning")
-	for t = Config.WAVE_WARN, 1, -1 do
-		gs:SetAttribute("WaveTimer", t)
-		task.wait(1)
-	end
-	gs:SetAttribute("WavePhase", "sweep")
-	gs:SetAttribute("WaveTimer", 0)
-	hitThisWave = {}
+local function getGameState()
+	return ReplicatedStorage:WaitForChild("GameState")
+end
+
+local function broadcastBanner(text, color, duration)
+	local remotes = ReplicatedStorage:WaitForChild("BrainrotRemotes")
+	remotes:WaitForChild("Banner"):FireAllClients(text, color, duration)
+end
+
+local function makeWall()
 	if wall then
-		wall.Transparency = 0.25
-		wall.CFrame = CFrame.new(-95, 15, 0)
-		local tween = TweenService:Create(wall, TweenInfo.new(8, Enum.EasingStyle.Linear), { CFrame = CFrame.new(95, 15, 0) })
-		tween:Play()
-		for step = 1, 16 do
-			task.wait(0.5)
-			local wallX = wall.Position.X
+		wall:Destroy()
+	end
+	wall = Instance.new("Part")
+	wall.Name = "TsunamiWall"
+	wall.Size = Vector3.new(170, 30, 2)
+	wall.Color = Color3.fromRGB(40, 140, 255)
+	wall.Material = Enum.Material.Neon
+	wall.Transparency = 0.4
+	wall.Anchored = true
+	wall.CanCollide = false
+	wall.CFrame = CFrame.new(0, 15, -85)
+	wall.Parent = workspace
+	return wall
+end
+
+function Wave.startTsunami(_arg)
+	if running then
+		return false
+	end
+	running = true
+	local gs = getGameState()
+	task.spawn(function()
+		gs:SetAttribute("WavePhase", "warning")
+		for remaining = Config.WAVE_WARNING, 1, -1 do
+			gs:SetAttribute("WaveTimer", remaining)
+			if remaining == Config.WAVE_WARNING or remaining <= 5 then
+				broadcastBanner("TSUNAMI IN " .. remaining .. "s - RUN HOME!", "blue", 2)
+			end
+			task.wait(1)
+		end
+		gs:SetAttribute("WavePhase", "sweep")
+		broadcastBanner("TSUNAMI! RUN HOME!", "blue", 4)
+		local wallPart = makeWall()
+		local hitPlayers = {}
+		local steps = 40
+		for i = 1, steps do
+			local z = -85 + (170 * i / steps)
+			wallPart.CFrame = CFrame.new(0, 15, z)
 			for _, player in ipairs(Players:GetPlayers()) do
-				local char = player.Character
-				local root = char and char:FindFirstChild("HumanoidRootPart")
-				if root and not hitThisWave[player] then
-					local state = Economy.getState(player)
-					local inside = false
-					if state then
-						local center = Economy.getBaseCenter(state.baseIndex)
-						local d = (Vector3.new(root.Position.X, 0, root.Position.Z) - Vector3.new(center.X, 0, center.Z)).Magnitude
-						inside = d < 10
-					end
-					if not inside and math.abs(root.Position.X - wallX) < 14 then
-						hitThisWave[player] = true
-						Wave.knockPlayer(player, root)
-						Steal.dropCarried(player, "wave")
+				if not hitPlayers[player] then
+					local char = player.Character
+					local root = char and char:FindFirstChild("HumanoidRootPart")
+					if root then
+						local p = root.Position
+						-- Safe inside your own base; anywhere else the wave gets you.
+						local Economy = require(script.Parent:WaitForChild("Economy"))
+						local state = Economy.getState(player)
+						local safe = false
+						if state and state.baseIndex > 0 then
+							local center = Config.BASE_POSITIONS[state.baseIndex]
+							if center and math.abs(p.X - center.X) <= 9 and math.abs(p.Z - center.Z) <= 9 then
+								safe = true
+							end
+						end
+						if not safe and math.abs(p.Z - z) < 6 then
+							hitPlayers[player] = true
+							local humanoid = char:FindFirstChildOfClass("Humanoid")
+							if humanoid then
+								humanoid:ChangeState(Enum.HumanoidStateType.FallingDown)
+							end
+							root.AssemblyLinearVelocity = Vector3.new(0, 25, 60)
+							local taken = Economy.deductCoins(player, math.floor((player:GetAttribute("Coins") or 0) * Config.WAVE_COIN_LOSS))
+							local Steal = require(script.Parent:WaitForChild("Steal"))
+							Steal.dropCarried(player, "The wave knocked your stolen brainrot loose!")
+							local remotes = ReplicatedStorage:WaitForChild("BrainrotRemotes")
+							remotes:WaitForChild("Banner"):FireClient(player, "HIT! -" .. taken .. " coins - RUN HOME!", "red", 4)
+						end
 					end
 				end
 			end
+			task.wait(Config.WAVE_SWEEP / steps)
 		end
-		tween:Cancel()
-		wall.Transparency = 1
-	end
-	gs:SetAttribute("WavePhase", "calm")
-	Economy.bannerAll("WAVE PASSED - back to the belt!", Color3.fromRGB(80, 255, 120))
+		if wallPart then
+			wallPart:Destroy()
+		end
+		wall = nil
+		gs:SetAttribute("WavePhase", "calm")
+		gs:SetAttribute("WaveTimer", Config.WAVE_INTERVAL)
+		running = false
+	end)
+	return true
 end
 
-function Wave.knockPlayer(player, root)
-	local Economy = require(script.Parent:WaitForChild("Economy"))
-	local state = Economy.getState(player)
-	if not state then
-		return
-	end
-	local loss = math.floor(state.coins * Config.WAVE_LOSS)
-	state.coins -= loss
-	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.Sit = false
-	end
-	local center = Economy.getBaseCenter(state.baseIndex)
-	local dir = (Vector3.new(root.Position.X, 0, root.Position.Z) - Vector3.new(center.X, 0, center.Z))
-	if dir.Magnitude < 1 then
-		dir = Vector3.new(1, 0, 0)
-	end
-	dir = dir.Unit
-	root.AssemblyLinearVelocity = dir * 60 + Vector3.new(0, 30, 0)
-	Economy.banner(player, "HIT! -" .. loss .. " coins - RUN HOME!", Color3.fromRGB(255, 80, 80))
-	local remotes = ReplicatedStorage:WaitForChild("Remotes")
-	remotes:WaitForChild("HudEvent"):FireClient(player, "Float", "-" .. loss .. " coins")
-	Economy.refreshAttributes(player)
+function Wave.triggerMythicWindow(charName)
+	local gs = getGameState()
+	gs:SetAttribute("MythicLeft", Config.MYTHIC_WINDOW)
+	broadcastBanner("MYTHIC SPAWNED: " .. charName .. "! 2x INCOME 60s!", "gold", 5)
 end
 
-function Wave.startLoop(wallPart)
-	wall = wallPart
-	local gs = ReplicatedStorage:WaitForChild("GameState")
+function Wave.startEvents()
+	local gs = getGameState()
+	gs:SetAttribute("GoldenLeft", 0)
+	gs:SetAttribute("MythicLeft", 0)
 	task.spawn(function()
 		while true do
-			for t = Config.WAVE_EVERY, 1, -1 do
-				gs:SetAttribute("WaveTimer", t)
-				gs:SetAttribute("WavePhase", "calm")
+			task.wait(Config.GOLDEN_INTERVAL - Config.GOLDEN_DURATION)
+			gs:SetAttribute("GoldenLeft", Config.GOLDEN_DURATION)
+			broadcastBanner("GOLDEN HOUR - 2x INCOME!", "gold", 5)
+			for _ = 1, Config.GOLDEN_DURATION do
 				task.wait(1)
+				local left = (gs:GetAttribute("GoldenLeft") or 0) - 1
+				gs:SetAttribute("GoldenLeft", math.max(0, left))
 			end
-			Wave.startTsunami()
 		end
 	end)
 	task.spawn(function()
-		local goldenIn = Config.GOLDEN_HOUR_EVERY
 		while true do
 			task.wait(1)
-			local goldenLeft = gs:GetAttribute("GoldenLeft") or 0
-			local mythicLeft = gs:GetAttribute("MythicLeft") or 0
-			if goldenLeft > 0 then
-				gs:SetAttribute("GoldenLeft", goldenLeft - 1)
-			else
-				goldenIn -= 1
-				if goldenIn <= 0 then
-					goldenIn = Config.GOLDEN_HOUR_EVERY
-					gs:SetAttribute("GoldenLeft", Config.GOLDEN_HOUR_LEN)
-					local Economy = require(script.Parent:WaitForChild("Economy"))
-					Economy.bannerAll("GOLDEN HOUR - 2x INCOME!", Color3.fromRGB(255, 215, 0))
-				end
+			local left = gs:GetAttribute("MythicLeft") or 0
+			if left > 0 then
+				gs:SetAttribute("MythicLeft", left - 1)
 			end
-			if mythicLeft > 0 then
-				gs:SetAttribute("MythicLeft", mythicLeft - 1)
+		end
+	end)
+end
+
+function Wave.start()
+	local gs = getGameState()
+	gs:SetAttribute("WavePhase", "calm")
+	gs:SetAttribute("WaveTimer", Config.WAVE_INTERVAL)
+	Wave.startEvents()
+	task.spawn(function()
+		while true do
+			for remaining = Config.WAVE_INTERVAL, 1, -1 do
+				if (gs:GetAttribute("WavePhase") or "calm") ~= "calm" then
+					break
+				end
+				gs:SetAttribute("WaveTimer", remaining)
+				task.wait(1)
+			end
+			if (gs:GetAttribute("WavePhase") or "calm") == "calm" then
+				Wave.startTsunami()
+				repeat
+					task.wait(1)
+				until running == false
 			end
 		end
 	end)

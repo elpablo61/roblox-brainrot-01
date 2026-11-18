@@ -1,4 +1,7 @@
--- Slap knocks a rival back and drops whatever brainrot they are carrying.
+-- Slap: the genre's signature defence. A Slap tool is handed out fresh on
+-- every spawn (cloned tools lose their connections, so never clone one),
+-- and slapping a thief knocks them back and drops whatever they carry.
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -10,23 +13,23 @@ function Slap.slapPlayer(player, target)
 	if not target or target == player then
 		return false
 	end
-	local char = player.Character
 	local targetChar = target.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
-	local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-	if not root or not targetRoot then
+	local myChar = player.Character
+	if not targetChar or not myChar then
 		return false
 	end
-	local dir = (targetRoot.Position - root.Position)
-	if dir.Magnitude > Config.SLAP_RANGE then
+	local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+	local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+	if not targetRoot or not myRoot then
 		return false
 	end
-	dir = dir.Unit
-	targetRoot.AssemblyLinearVelocity = dir * Config.SLAP_FORCE + Vector3.new(0, 25, 0)
+	if (targetRoot.Position - myRoot.Position).Magnitude > 12 then
+		return false
+	end
+	local dir = (targetRoot.Position - myRoot.Position).Unit
+	targetRoot.AssemblyLinearVelocity = dir * 45 + Vector3.new(0, 20, 0)
 	local Steal = require(script.Parent:WaitForChild("Steal"))
-	Steal.dropCarried(target, "slap")
-	local Economy = require(script.Parent:WaitForChild("Economy"))
-	Economy.banner(target, "SLAPPED by " .. player.DisplayName .. "!", Color3.fromRGB(255, 80, 80))
+	Steal.dropCarried(target, "SLAPPED! Your stolen brainrot dropped!")
 	return true
 end
 
@@ -35,9 +38,10 @@ function Slap.giveTool(player)
 	if not char then
 		return
 	end
-	local old = char:FindFirstChild("Slap") or player.Backpack:FindFirstChild("Slap")
-	if old then
-		old:Destroy()
+	for _, old in ipairs(player.Backpack:GetChildren()) do
+		if old.Name == "Slap" then
+			old:Destroy()
+		end
 	end
 	local tool = Instance.new("Tool")
 	tool.Name = "Slap"
@@ -45,39 +49,39 @@ function Slap.giveTool(player)
 	tool.CanBeDropped = false
 	local handle = Instance.new("Part")
 	handle.Name = "Handle"
-	handle.Size = Vector3.new(0.6, 1.6, 0.6)
-	handle.Color = Color3.fromRGB(255, 220, 120)
+	handle.Size = Vector3.new(1, 1, 3)
+	handle.Color = Color3.fromRGB(255, 220, 180)
 	handle.Material = Enum.Material.SmoothPlastic
 	handle.Parent = tool
 	tool.Parent = player.Backpack
 	tool.Activated:Connect(function()
-		local charNow = player.Character
-		local root = charNow and charNow:FindFirstChild("HumanoidRootPart")
-		if not root then
+		local myChar = player.Character
+		local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		if not myRoot then
 			return
 		end
-		local best = nil
-		local bestDist = Config.SLAP_RANGE
+		local nearest = nil
+		local nearestDist = 12
 		for _, other in ipairs(Players:GetPlayers()) do
 			if other ~= player then
 				local otherChar = other.Character
 				local otherRoot = otherChar and otherChar:FindFirstChild("HumanoidRootPart")
 				if otherRoot then
-					local d = (otherRoot.Position - root.Position).Magnitude
-					if d < bestDist then
-						bestDist = d
-						best = other
+					local dist = (otherRoot.Position - myRoot.Position).Magnitude
+					if dist < nearestDist then
+						nearestDist = dist
+						nearest = other
 					end
 				end
 			end
 		end
-		if best then
-			Slap.slapPlayer(player, best)
+		if nearest then
+			Slap.slapPlayer(player, nearest)
 		end
 	end)
 end
 
-function Slap.hookSpawns()
+function Slap.start()
 	Players.PlayerAdded:Connect(function(player)
 		player.CharacterAdded:Connect(function()
 			task.wait(0.5)
