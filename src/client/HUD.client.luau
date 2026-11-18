@@ -48,7 +48,7 @@ function HUD.refreshStats()
 	end
 	if labels.event then
 		if goldenLeft > 0 and mythicLeft > 0 then
-			labels.event.Text = "GOLDEN HOUR 2x! " .. goldenLeft .. "s  +  MYTHIC 2x! " .. mythicLeft .. "s"
+			labels.event.Text = "GOLDEN + MYTHIC 2x!"
 			labels.event.Visible = true
 		elseif goldenLeft > 0 then
 			labels.event.Text = "GOLDEN HOUR 2x! " .. goldenLeft .. "s"
@@ -87,7 +87,7 @@ function HUD.showBanner(text, color)
 	banner.Visible = true
 	bannerUntil = tick() + 5
 	if bannerConn then
-		bannerConn:Disconnect()
+		task.cancel(bannerConn)
 	end
 	bannerConn = task.delay(5, function()
 		if tick() >= bannerUntil then
@@ -160,7 +160,7 @@ local function buildGui()
 	labels.coins = makeLabel(gui, "Coins", "COINS: $150", UDim2.new(1, -330, 0, 12), UDim2.new(0, 320, 0, 44), 30)
 	labels.income = makeLabel(gui, "Income", "EARNING $0/s  x1", UDim2.new(1, -330, 0, 62), UDim2.new(0, 320, 0, 40), 28)
 	labels.wave = makeLabel(gui, "Wave", "NEXT WAVE 02:00", UDim2.new(0.5, -220, 0, 12), UDim2.new(0, 440, 0, 44), 30)
-	labels.event = makeLabel(gui, "Event", "", UDim2.new(0.5, -220, 0, 62), UDim2.new(0, 440, 0, 36), 26, Color3.fromRGB(255, 215, 0))
+	labels.event = makeLabel(gui, "Event", "", UDim2.new(0.5, -180, 0, 62), UDim2.new(0, 360, 0, 36), 26, Color3.fromRGB(255, 215, 0))
 	labels.event.Visible = false
 
 	local banner = Instance.new("TextLabel")
@@ -185,7 +185,7 @@ local function buildGui()
 	labels.lock = makeButton(gui, "LockButton", "LOCK BASE (60s)", UDim2.new(1, -330, 1, -130), UDim2.new(0, 320, 0, 56), Color3.fromRGB(200, 60, 60))
 	labels.rebirth = makeButton(gui, "RebirthButton", "REBIRTH $10000  x1.25", UDim2.new(1, -330, 1, -66), UDim2.new(0, 320, 0, 56), Color3.fromRGB(150, 80, 220))
 
-	labels.hint = makeLabel(gui, "Hint", "Click a brainrot on the belt to BUY it - steal rivals when their lock is OFF", UDim2.new(0, 12, 1, -44), UDim2.new(0, 620, 0, 34), 20)
+	labels.hint = makeLabel(gui, "Hint", "Click a brainrot on the belt to BUY it - steal rivals when their lock is OFF", UDim2.new(0, 12, 1, -44), UDim2.new(0, 440, 0, 34), 20)
 	labels.hint.BackgroundTransparency = 0.55
 
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
