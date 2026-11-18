@@ -1,247 +1,203 @@
--- HUD: coins, earnings, wave timer, base panel, collection index, lock and
--- rebirth buttons. Kept clear of the top-left corner (Roblox menu sits there).
+-- Brainrot Blitz HUD: coins, earnings, wave timer, base panel, index,
+-- lock and rebirth buttons, hint and banners. Text stays clear of the
+-- top-left corner where Roblox puts its menu buttons.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
-local gameState = ReplicatedStorage:WaitForChild("GameState")
-local notify = ReplicatedStorage:WaitForChild("BrainrotNotify")
 
 local HUD = {}
 
+local gui = Instance.new("ScreenGui")
+gui.Name = "BrainrotHUD"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local function makeLabel(name, parent, pos, size, textSize, color)
+	local label = Instance.new("TextLabel")
+	label.Name = name
+	label.Position = pos
+	label.Size = size
+	label.BackgroundTransparency = 0.4
+	label.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	label.TextColor3 = color
+	label.TextSize = textSize
+	label.Font = Enum.Font.GothamBold
+	label.Text = ""
+	label.Parent = parent
+	return label
+end
+
+local waveLabel = makeLabel("WaveTimer", gui, UDim2.new(0.5, -150, 0, 10), UDim2.fromOffset(300, 44), 30, Color3.fromRGB(120, 220, 255))
+waveLabel.AnchorPoint = Vector2.new(0.5, 0)
+local goldenLabel = makeLabel("GoldenHour", gui, UDim2.new(0.5, -120, 0, 58), UDim2.fromOffset(240, 36), 20, Color3.fromRGB(255, 210, 40))
+goldenLabel.AnchorPoint = Vector2.new(0.5, 0)
+local bannerLabel = makeLabel("Banner", gui, UDim2.new(0.5, -260, 0, 110), UDim2.fromOffset(520, 56), 30, Color3.fromRGB(255, 90, 90))
+bannerLabel.AnchorPoint = Vector2.new(0.5, 0)
+bannerLabel.Visible = false
+
+local coinsLabel = makeLabel("Coins", gui, UDim2.new(1, -330, 0, 10), UDim2.fromOffset(320, 52), 32, Color3.fromRGB(255, 220, 80))
+coinsLabel.TextXAlignment = Enum.TextXAlignment.Right
+local earningLabel = makeLabel("Earning", gui, UDim2.new(1, -330, 0, 66), UDim2.fromOffset(320, 40), 28, Color3.fromRGB(80, 255, 120))
+earningLabel.TextXAlignment = Enum.TextXAlignment.Right
+local floatLabel = makeLabel("IncomeFloat", gui, UDim2.new(1, -330, 0, 110), UDim2.fromOffset(320, 36), 28, Color3.fromRGB(80, 255, 120))
+floatLabel.TextXAlignment = Enum.TextXAlignment.Right
+floatLabel.BackgroundTransparency = 1
+floatLabel.Visible = false
+
+local basePanel = Instance.new("Frame")
+basePanel.Name = "BasePanel"
+basePanel.Position = UDim2.new(1, -320, 0, 190)
+basePanel.Size = UDim2.fromOffset(310, 300)
+basePanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+basePanel.BackgroundTransparency = 0.4
+basePanel.BorderSizePixel = 2
+basePanel.BorderColor3 = Color3.fromRGB(255, 255, 255)
+basePanel.Parent = gui
+local baseTitle = makeLabel("BaseTitle", basePanel, UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 36), 22, Color3.fromRGB(255, 255, 255))
+baseTitle.BackgroundTransparency = 1
+local baseList = makeLabel("BaseList", basePanel, UDim2.new(0, 6, 0, 40), UDim2.new(1, -12, 1, -46), 16, Color3.fromRGB(220, 220, 220))
+baseList.BackgroundTransparency = 1
+baseList.TextXAlignment = Enum.TextXAlignment.Left
+baseList.TextYAlignment = Enum.TextYAlignment.Top
+baseList.TextWrapped = true
+
+local lockButton = Instance.new("TextButton")
+lockButton.Name = "LockButton"
+lockButton.Position = UDim2.new(1, -220, 1, -140)
+lockButton.Size = UDim2.fromOffset(200, 50)
+lockButton.BackgroundColor3 = Color3.fromRGB(60, 120, 255)
+lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+lockButton.TextSize = 24
+lockButton.Font = Enum.Font.GothamBold
+lockButton.Text = "LOCK BASE (60s)"
+lockButton.Parent = gui
+local rebirthButton = Instance.new("TextButton")
+rebirthButton.Name = "RebirthButton"
+rebirthButton.Position = UDim2.new(1, -220, 1, -80)
+rebirthButton.Size = UDim2.fromOffset(200, 50)
+rebirthButton.BackgroundColor3 = Color3.fromRGB(170, 80, 255)
+rebirthButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+rebirthButton.TextSize = 24
+rebirthButton.Font = Enum.Font.GothamBold
+rebirthButton.Text = "REBIRTH $10,000"
+rebirthButton.Parent = gui
+
+local hintLabel = makeLabel("Hint", gui, UDim2.new(0, 12, 1, -8), UDim2.fromOffset(620, 36), 20, Color3.fromRGB(255, 255, 255))
+hintLabel.AnchorPoint = Vector2.new(0, 1)
+hintLabel.Text = "Click a brainrot to BUY it - click a rival's to STEAL it - SLAP drops thieves!"
+hintLabel.BackgroundTransparency = 0.4
+
+local lastCoins = 0
+
 function HUD.refreshStats()
-	local coinsLabel = HUD.gui and HUD.gui:FindFirstChild("TopBar") and HUD.gui.TopBar:FindFirstChild("CoinsLabel")
-	if not coinsLabel then
-		return
+	local coins = player:GetAttribute("Coins") or 0
+	local income = player:GetAttribute("IncomePerSec") or 0
+	local slotsUsed = player:GetAttribute("SlotsUsed") or 0
+	local slotsMax = player:GetAttribute("SlotsMax") or 8
+	local indexCount = player:GetAttribute("IndexCount") or 0
+	local rebirths = player:GetAttribute("Rebirths") or 0
+	local lockLeft = player:GetAttribute("LockLeft") or 0
+	local lockCooldown = player:GetAttribute("LockCooldown") or 0
+	local waveTimer = player:GetAttribute("WaveTimer")
+	local waveWarning = player:GetAttribute("WaveWarning") or 0
+	local goldenLeft = player:GetAttribute("GoldenLeft") or 0
+	local mythicLeft = player:GetAttribute("MythicLeft") or 0
+	local mult = player:GetAttribute("Multiplier") or 1
+	coinsLabel.Text = "COINS $" .. tostring(coins)
+	earningLabel.Text = "EARNING $" .. tostring(income) .. "/s  x" .. string.format("%.2f", mult)
+	if coins > lastCoins and income > 0 then
+		floatLabel.Text = "+$" .. tostring(income)
+		floatLabel.Visible = true
+		task.delay(1, function() floatLabel.Visible = false end)
 	end
-	local coins = player:GetAttribute("Coins") or 150
-	local income = player:GetAttribute("Income") or 0
-	coinsLabel.Text = "$" .. coins .. "   EARNING $" .. income .. "/s"
-	local waveLabel = HUD.gui.TopBar:FindFirstChild("WaveLabel")
-	if waveLabel then
-		local waveTime = gameState:GetAttribute("WaveTime") or 120
-		local waveState = gameState:GetAttribute("WaveState") or "countdown"
-		local minutes = math.floor(waveTime / 60)
-		local seconds = waveTime % 60
-		if waveState == "warning" then
-			waveLabel.Text = "TSUNAMI IN " .. waveTime .. "s — RUN HOME!"
-			waveLabel.TextColor3 = Color3.fromRGB(255, 60, 60)
-		elseif waveState == "sweep" then
-			waveLabel.Text = "TSUNAMI SWEEPING!"
-			waveLabel.TextColor3 = Color3.fromRGB(255, 60, 60)
-		else
-			waveLabel.Text = "NEXT WAVE " .. string.format("%02d:%02d", minutes, seconds)
-			waveLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	lastCoins = coins
+	if waveWarning > 0 then
+		waveLabel.Text = "TSUNAMI IN " .. tostring(waveWarning) .. "s - RUN HOME!"
+		waveLabel.TextColor3 = Color3.fromRGB(255, 60, 60)
+	elseif waveTimer ~= nil then
+		local mins = math.floor(waveTimer / 60)
+		local secs = waveTimer % 60
+		waveLabel.Text = "NEXT WAVE " .. string.format("%02d:%02d", mins, secs)
+		waveLabel.TextColor3 = Color3.fromRGB(120, 220, 255)
+	else
+		waveLabel.Text = "NEXT WAVE --:--"
+	end
+	if goldenLeft > 0 then
+		goldenLabel.Text = "GOLDEN HOUR 2x! " .. tostring(goldenLeft) .. "s"
+		goldenLabel.Visible = true
+	elseif mythicLeft > 0 then
+		goldenLabel.Text = "MYTHIC 2x! " .. tostring(mythicLeft) .. "s"
+		goldenLabel.Visible = true
+	else
+		goldenLabel.Visible = false
+	end
+	local bannerText = player:GetAttribute("BannerText")
+	local bannerUntil = player:GetAttribute("BannerUntil") or 0
+	if bannerText and bannerText ~= "" and os.time() < bannerUntil then
+		bannerLabel.Text = bannerText
+		bannerLabel.Visible = true
+	else
+		bannerLabel.Visible = false
+	end
+	baseTitle.Text = "MY BASE - SLOTS " .. tostring(slotsUsed) .. "/" .. tostring(slotsMax) .. " - INDEX " .. tostring(indexCount) .. "/16"
+	local lines = {}
+	local character = player.Character
+	if character then
+		for _, model in ipairs(workspace:GetDescendants()) do
+			if model:IsA("Model") and model:GetAttribute("OwnerId") == player.UserId then
+				table.insert(lines, (model:GetAttribute("CharName") or model.Name) .. "  $" .. tostring(model:GetAttribute("Income") or 0) .. "/s")
+			end
 		end
 	end
-	local basePanel = HUD.gui:FindFirstChild("BasePanel")
-	if basePanel then
-		local owned = player:GetAttribute("Owned") or 0
-		local slots = player:GetAttribute("Slots") or 8
-		local indexCount = player:GetAttribute("IndexCount") or 0
-		local rebirths = player:GetAttribute("Rebirths") or 0
-		local mult = player:GetAttribute("Multiplier") or 1
-		local slotsLabel = basePanel:FindFirstChild("SlotsLabel")
-		if slotsLabel then
-			slotsLabel.Text = "MY BASE  •  SLOTS " .. owned .. "/" .. slots .. "  •  INDEX " .. indexCount .. "/16"
-		end
-		local rebirthLabel = basePanel:FindFirstChild("RebirthLabel")
-		if rebirthLabel then
-			rebirthLabel.Text = "REBIRTHS: " .. rebirths .. "  •  MULTIPLIER x" .. mult
-		end
+	if #lines == 0 then
+		baseList.Text = "No brainrots yet!\nBuy one on the red carpet."
+	else
+		baseList.Text = table.concat(lines, "\n")
 	end
-	local lockButton = HUD.gui:FindFirstChild("LockButton")
-	if lockButton then
-		local lockLeft = player:GetAttribute("LockLeft") or 0
-		local lockCooldown = player:GetAttribute("LockCooldown") or 0
-		if lockLeft > 0 then
-			lockButton.Text = "LOCKED " .. lockLeft .. "s"
-			lockButton.BackgroundColor3 = Color3.fromRGB(60, 200, 80)
-		elseif lockCooldown > 0 then
-			lockButton.Text = "LOCK (" .. lockCooldown .. "s)"
-			lockButton.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
-		else
-			lockButton.Text = "LOCK BASE 60s"
-			lockButton.BackgroundColor3 = Color3.fromRGB(60, 140, 255)
-		end
+	if lockLeft > 0 then
+		lockButton.Text = "LOCKED " .. tostring(lockLeft) .. "s"
+	elseif lockCooldown > 0 then
+		lockButton.Text = "LOCK CD " .. tostring(lockCooldown) .. "s"
+	else
+		lockButton.Text = "LOCK BASE (60s)"
 	end
-	local rebirthButton = HUD.gui:FindFirstChild("RebirthButton")
-	if rebirthButton then
-		rebirthButton.Text = "REBIRTH $10,000  (+25% FOREVER)"
+	if rebirths > 0 then
+		rebirthButton.Text = "REBIRTH x" .. tostring(rebirths) .. " - $10,000"
+	else
+		rebirthButton.Text = "REBIRTH $10,000"
 	end
 end
 
-function HUD.buildGui()
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "BrainrotHUD"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = false
-	gui.Parent = player:WaitForChild("PlayerGui")
-	HUD.gui = gui
-
-	local topBar = Instance.new("Frame")
-	topBar.Name = "TopBar"
-	topBar.AnchorPoint = Vector2.new(0.5, 0)
-	topBar.Position = UDim2.new(0.5, 0, 0, 8)
-	topBar.Size = UDim2.new(0, 640, 0, 96)
-	topBar.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-	topBar.BackgroundTransparency = 0.25
-	topBar.BorderSizePixel = 0
-	topBar.Parent = gui
-
-	local coinsLabel = Instance.new("TextLabel")
-	coinsLabel.Name = "CoinsLabel"
-	coinsLabel.Size = UDim2.new(1, 0, 0, 48)
-	coinsLabel.Position = UDim2.new(0, 0, 0, 4)
-	coinsLabel.BackgroundTransparency = 1
-	coinsLabel.Text = "$150   EARNING $0/s"
-	coinsLabel.TextColor3 = Color3.fromRGB(255, 220, 60)
-	coinsLabel.TextSize = 32
-	coinsLabel.Font = Enum.Font.GothamBold
-	coinsLabel.Parent = topBar
-
-	local waveLabel = Instance.new("TextLabel")
-	waveLabel.Name = "WaveLabel"
-	waveLabel.Size = UDim2.new(1, 0, 0, 40)
-	waveLabel.Position = UDim2.new(0, 0, 0, 52)
-	waveLabel.BackgroundTransparency = 1
-	waveLabel.Text = "NEXT WAVE 02:00"
-	waveLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	waveLabel.TextSize = 28
-	waveLabel.Font = Enum.Font.GothamBold
-	waveLabel.Parent = topBar
-
-	local basePanel = Instance.new("Frame")
-	basePanel.Name = "BasePanel"
-	basePanel.AnchorPoint = Vector2.new(1, 0)
-	basePanel.Position = UDim2.new(1, -12, 0, 116)
-	basePanel.Size = UDim2.new(0, 320, 0, 110)
-	basePanel.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-	basePanel.BackgroundTransparency = 0.25
-	basePanel.BorderSizePixel = 0
-	basePanel.Parent = gui
-
-	local slotsLabel = Instance.new("TextLabel")
-	slotsLabel.Name = "SlotsLabel"
-	slotsLabel.Size = UDim2.new(1, -16, 0, 44)
-	slotsLabel.Position = UDim2.new(0, 8, 0, 8)
-	slotsLabel.BackgroundTransparency = 1
-	slotsLabel.Text = "MY BASE  •  SLOTS 0/8  •  INDEX 0/16"
-	slotsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	slotsLabel.TextSize = 22
-	slotsLabel.TextWrapped = true
-	slotsLabel.Font = Enum.Font.GothamBold
-	slotsLabel.Parent = basePanel
-
-	local rebirthLabel = Instance.new("TextLabel")
-	rebirthLabel.Name = "RebirthLabel"
-	rebirthLabel.Size = UDim2.new(1, -16, 0, 40)
-	rebirthLabel.Position = UDim2.new(0, 8, 0, 56)
-	rebirthLabel.BackgroundTransparency = 1
-	rebirthLabel.Text = "REBIRTHS: 0  •  MULTIPLIER x1"
-	rebirthLabel.TextColor3 = Color3.fromRGB(160, 220, 255)
-	rebirthLabel.TextSize = 22
-	rebirthLabel.Font = Enum.Font.GothamBold
-	rebirthLabel.Parent = basePanel
-
-	local lockButton = Instance.new("TextButton")
-	lockButton.Name = "LockButton"
-	lockButton.AnchorPoint = Vector2.new(1, 1)
-	lockButton.Position = UDim2.new(1, -12, 1, -64)
-	lockButton.Size = UDim2.new(0, 220, 0, 52)
-	lockButton.BackgroundColor3 = Color3.fromRGB(60, 140, 255)
-	lockButton.Text = "LOCK BASE 60s"
-	lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	lockButton.TextSize = 26
-	lockButton.Font = Enum.Font.GothamBold
-	lockButton.Parent = gui
-	lockButton.MouseButton1Click:Connect(function()
-		local lockRequest = ReplicatedStorage:WaitForChild("LockRequest")
-		lockRequest:FireServer()
-	end)
-
-	local rebirthButton = Instance.new("TextButton")
-	rebirthButton.Name = "RebirthButton"
-	rebirthButton.AnchorPoint = Vector2.new(1, 1)
-	rebirthButton.Position = UDim2.new(1, -12, 1, -8)
-	rebirthButton.Size = UDim2.new(0, 320, 0, 48)
-	rebirthButton.BackgroundColor3 = Color3.fromRGB(200, 60, 200)
-	rebirthButton.Text = "REBIRTH $10,000  (+25% FOREVER)"
-	rebirthButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	rebirthButton.TextSize = 24
-	rebirthButton.Font = Enum.Font.GothamBold
-	rebirthButton.Parent = gui
-	rebirthButton.MouseButton1Click:Connect(function()
-		local rebirthRequest = ReplicatedStorage:WaitForChild("RebirthRequest")
-		rebirthRequest:FireServer()
-	end)
-
-	local hint = Instance.new("TextLabel")
-	hint.Name = "HintLabel"
-	hint.AnchorPoint = Vector2.new(0.5, 1)
-	hint.Position = UDim2.new(0.5, 0, 1, -8)
-	hint.Size = UDim2.new(0, 700, 0, 36)
-	hint.BackgroundTransparency = 1
-	hint.Text = "Click a brainrot on the red carpet to BUY it — click a rival's to STEAL it!"
-	hint.TextColor3 = Color3.fromRGB(255, 255, 255)
-	hint.TextStrokeTransparency = 0
-	hint.TextSize = 22
-	hint.Font = Enum.Font.GothamBold
-	hint.Parent = gui
-
-	local banner = Instance.new("TextLabel")
-	banner.Name = "Banner"
-	banner.AnchorPoint = Vector2.new(0.5, 0)
-	banner.Position = UDim2.new(0.5, 0, 0, 120)
-	banner.Size = UDim2.new(0, 700, 0, 56)
-	banner.BackgroundTransparency = 1
-	banner.Text = ""
-	banner.TextColor3 = Color3.fromRGB(255, 220, 60)
-	banner.TextStrokeTransparency = 0
-	banner.TextSize = 34
-	banner.Font = Enum.Font.GothamBold
-	banner.Parent = gui
-end
-
-function HUD.showBanner(text, color)
-	local banner = HUD.gui and HUD.gui:FindFirstChild("Banner")
-	if not banner then
-		return
-	end
-	banner.Text = text
-	if color then
-		banner.TextColor3 = color
-	end
-	task.delay(4, function()
-		if banner.Text == text then
-			banner.Text = ""
-		end
-	end)
-end
-
-notify.OnClientEvent:Connect(function(kind, text)
-	if kind == "wave-warning" then
-		HUD.showBanner(text, Color3.fromRGB(255, 60, 60))
-	elseif kind == "wave-sweep" then
-		HUD.showBanner(text, Color3.fromRGB(0, 180, 255))
-	elseif kind == "golden" then
-		HUD.showBanner(text, Color3.fromRGB(255, 215, 0))
-	elseif kind == "mythic" then
-		HUD.showBanner("MYTHIC SPAWNED: " .. text .. " — 2x INCOME 60s!", Color3.fromRGB(255, 60, 255))
-	elseif kind == "bought" or kind == "stolen" or kind == "rebirth" or kind == "locked" then
-		HUD.showBanner(text, Color3.fromRGB(120, 255, 120))
-	elseif kind == "denied" or kind == "wave-hit" or kind == "dropped" then
-		HUD.showBanner(text, Color3.fromRGB(255, 120, 120))
-	elseif kind == "carrying" then
-		HUD.showBanner(text, Color3.fromRGB(255, 220, 60))
-	end
-	HUD.refreshStats()
+lockButton.MouseButton1Click:Connect(function()
+	local event = ReplicatedStorage:WaitForChild("LockEvent")
+	event:FireServer()
+end)
+rebirthButton.MouseButton1Click:Connect(function()
+	local event = ReplicatedStorage:WaitForChild("RebirthEvent")
+	event:FireServer()
 end)
 
-HUD.buildGui()
-HUD.refreshStats()
-RunService.Heartbeat:Connect(function()
-	HUD.refreshStats()
+task.spawn(function()
+	while true do
+		task.wait(0.25)
+		HUD.refreshStats()
+	end
+end)
+
+-- Clicking a brainrot in the 3D world buys it (or steals it from a rival):
+-- the client raycasts the mouse, the server validates and applies the buy.
+local buyEvent = ReplicatedStorage:WaitForChild("BuyEvent")
+local mouse = player:GetMouse()
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+	local target = mouse.Target
+	if not target then return end
+	local model = target:FindFirstAncestorOfClass("Model")
+	if not model or not model:GetAttribute("CharName") then return end
+	buyEvent:FireServer(model)
 end)

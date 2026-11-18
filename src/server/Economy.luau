@@ -1,314 +1,220 @@
--- Economy: owns every player's coins, owned brainrots, income ticking,
--- buying, leaderstats and the Golden Hour / Mythic double-income windows.
+-- Economy owns all player state: coins, owned brainrots, rebirth count, lock timers.
+-- Income ticks once per second. Buying deducts coins and moves the brainrot
+-- to the buyer's base. State is mirrored to player attributes for the HUD.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
 
-local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 
 local Economy = {}
-Economy.players = {}
-Economy.goldenActive = false
-Economy.mythicActive = false
-Economy.takenBases = {}
+Economy.Players = {}
+Economy.GoldenLeft = 0
+Economy.GoldenCycle = 0
+Economy.MythicLeft = 0
+
+local function refreshAttributes(player, state)
+	player:SetAttribute("Coins", math.floor(state.coins))
+	player:SetAttribute("IncomePerSec", Economy.getIncome(player))
+	player:SetAttribute("SlotsUsed", #state.owned)
+	player:SetAttribute("SlotsMax", state.slotsMax)
+	player:SetAttribute("IndexCount", state.indexCount)
+	player:SetAttribute("Rebirths", state.rebirths)
+	player:SetAttribute("LockLeft", math.max(0, math.floor(state.lockLeft)))
+	player:SetAttribute("LockCooldown", math.max(0, math.floor(state.lockCooldown)))
+	player:SetAttribute("ProtectLeft", math.max(0, math.floor(state.protectLeft)))
+	player:SetAttribute("BaseIndex", state.baseIndex)
+	player:SetAttribute("GoldenLeft", Economy.GoldenLeft)
+	player:SetAttribute("MythicLeft", Economy.MythicLeft)
+	local mult = (Config.REBIRTH_MULTIPLIER ^ state.rebirths)
+	if Economy.GoldenLeft > 0 then mult *= 2 end
+	if Economy.MythicLeft > 0 then mult *= 2 end
+	player:SetAttribute("Multiplier", mult)
+end
+Economy.refreshAttributes = refreshAttributes
 
 function Economy.buyBrainrot(player, model)
-	local state = Economy.players[player]
-	if not state then
-		return false
+	local state = Economy.Players[player]
+	if not state or not model or not model.Parent then return false end
+	if model:GetAttribute("OwnerId") and model:GetAttribute("OwnerId") ~= 0 then
+		local Steal = require(script.Parent.Steal)
+		return Steal.attemptSteal(player, model)
 	end
-	local Conveyor = require(script.Parent:WaitForChild("Conveyor"))
-	if not Conveyor.isOnBelt(model) then
-		return false
-	end
+	if #state.owned >= state.slotsMax then return false end
 	local price = model:GetAttribute("Price") or 0
-	if state.coins < price then
-		Economy.notify(player, "denied", "Need $" .. price .. " — you have $" .. state.coins)
-		return false
-	end
-	if #state.owned >= state.slots then
-		Economy.notify(player, "denied", "Base full! Rebirth for +2 slots.")
-		return false
-	end
+	if state.coins < price then return false end
 	state.coins -= price
-	Conveyor.removeFromBelt(model)
-	Economy.placeInBase(player, model)
 	model:SetAttribute("OwnerId", player.UserId)
-	local label = model:FindFirstChild("BrainrotLabel")
-	if label then
-		local priceText = label:FindFirstChild("Price")
-		if priceText then
-			priceText.Text = "OWNED  •  $" .. (model:GetAttribute("Rate") or 0) .. "/s"
-			priceText.TextColor3 = Color3.fromRGB(120, 255, 120)
-		end
-	end
-	local charName = model:GetAttribute("CharName") or "Brainrot"
-	if not state.index[charName] then
-		state.index[charName] = true
+	table.insert(state.owned, model)
+	local seen = state.seen
+	local name = model:GetAttribute("CharName") or model.Name
+	if not seen[name] then
+		seen[name] = true
 		state.indexCount += 1
 	end
-	table.insert(state.owned, model)
-	Economy.refreshAttributes(player)
-	Economy.updateNextTierBoard(charName)
-	Economy.notify(player, "bought", "Bought " .. charName .. "!")
-	Economy.notifyAll("effect-buy", player.Name)
+	local base = Config.BASES[state.baseIndex]
+	local slot = #state.owned
+	local ox = ((slot - 1) % 5) * 4 - 8
+	local oz = math.floor((slot - 1) / 5) * 4 - 2
+	local dest = base.position + Vector3.new(ox, 3, oz)
+	model:SetAttribute("Belt", false)
+	local primary = model.PrimaryPart
+	if primary then
+		primary.CFrame = CFrame.new(dest)
+		primary.Anchored = true
+	end
+	local label = model:FindFirstChild("Label", true)
+	if label then
+		local text = label:FindFirstChildOfClass("TextLabel")
+		if text then text.Text = name .. "  $" .. tostring(model:GetAttribute("Income")) .. "/s" end
+	end
+	refreshAttributes(player, state)
+	local Effects = ReplicatedStorage:FindFirstChild("BuyEffectEvent")
+	if Effects then Effects:FireClient(player, dest) end
 	return true
 end
 
-function Economy.collectIncome()
-	while true do
-		task.wait(1)
-		for player, state in pairs(Economy.players) do
-			if player.Parent then
-				local income = Economy.getIncome(player)
-				if income > 0 then
-					state.coins += income
-					Economy.refreshAttributes(player)
-					Economy.floatIncomeText(player, income)
-				end
-			end
-		end
+function Economy.collectIncome(player)
+	local state = Economy.Players[player]
+	if not state then return 0 end
+	local income = Economy.getIncome(player)
+	if income > 0 then
+		state.coins += income
+		local base = Config.BASES[state.baseIndex]
+		local floatPart = Instance.new("Part")
+		floatPart.Name = "IncomeFloat"
+		floatPart.Anchored = true
+		floatPart.CanCollide = false
+		floatPart.Transparency = 1
+		floatPart.Size = Vector3.new(1, 1, 1)
+		floatPart.CFrame = CFrame.new(base.position + Vector3.new(0, 6, 0))
+		floatPart.Parent = workspace
+		local gui = Instance.new("BillboardGui")
+		gui.Size = UDim2.fromOffset(120, 40)
+		gui.StudsOffset = Vector3.new(0, 0, 0)
+		gui.AlwaysOnTop = true
+		gui.Parent = floatPart
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Text = "+$" .. tostring(income)
+		label.TextColor3 = Color3.fromRGB(80, 255, 120)
+		label.TextScaled = true
+		label.Font = Enum.Font.GothamBold
+		label.Parent = gui
+		TweenService:Create(floatPart, TweenInfo.new(1.4), { CFrame = CFrame.new(base.position + Vector3.new(0, 10, 0)) }):Play()
+		Debris:AddItem(floatPart, 1.5)
 	end
+	refreshAttributes(player, state)
+	return income
 end
 
 function Economy.getIncome(player)
-	local state = Economy.players[player]
-	if not state then
-		return 0
-	end
-	local total = 0
+	local state = Economy.Players[player]
+	if not state then return 0 end
+	local base = 0
 	for _, model in ipairs(state.owned) do
-		if model.Parent then
-			total += model:GetAttribute("Rate") or 0
-		end
+		if model.Parent then base += model:GetAttribute("Income") or 0 end
 	end
-	local mult = 1 + Config.REBIRTH_BONUS * state.rebirths
-	if Economy.goldenActive then
-		mult *= 2
-	end
-	if Economy.mythicActive then
-		mult *= 2
-	end
-	return math.floor(total * mult)
+	local mult = Config.REBIRTH_MULTIPLIER ^ state.rebirths
+	if Economy.GoldenLeft > 0 then mult *= 2 end
+	if Economy.MythicLeft > 0 then mult *= 2 end
+	return math.floor(base * mult)
 end
 
-function Economy.addPlayer(player)
+function Economy.startMythicWindow()
+	Economy.MythicLeft = Config.MYTHIC_WINDOW_SECONDS
+	for _, player in ipairs(Players:GetPlayers()) do
+		local state = Economy.Players[player]
+		if state then refreshAttributes(player, state) end
+	end
+end
+
+function Economy.registerPlayer(player)
+	local used = {}
+	for _, state in pairs(Economy.Players) do used[state.baseIndex] = true end
 	local baseIndex = 1
 	for i = 1, #Config.BASES do
-		if not Economy.takenBases[i] then
-			baseIndex = i
-			break
-		end
+		if not used[i] then baseIndex = i break end
 	end
-	Economy.takenBases[baseIndex] = player
-	Economy.players[player] = {
+	Economy.Players[player] = {
 		coins = Config.STARTING_COINS,
 		owned = {},
-		index = {},
+		seen = {},
 		indexCount = 0,
 		rebirths = 0,
-		slots = Config.BASE_SLOTS,
+		slotsMax = Config.BASE_SLOTS,
 		baseIndex = baseIndex,
-		lockUntil = 0,
-		lockCooldownUntil = 0,
-		protectedUntil = os.time() + Config.SPAWN_PROTECTION,
+		lockLeft = 0,
+		lockCooldown = 0,
+		protectLeft = Config.SPAWN_PROTECTION,
 	}
 	local leaderstats = Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
 	leaderstats.Parent = player
-	local coinsStat = Instance.new("IntValue")
-	coinsStat.Name = "Coins"
-	coinsStat.Value = Config.STARTING_COINS
-	coinsStat.Parent = leaderstats
-	local rebirthStat = Instance.new("IntValue")
-	rebirthStat.Name = "Rebirths"
-	rebirthStat.Value = 0
-	rebirthStat.Parent = leaderstats
-	Economy.refreshAttributes(player)
+	local coinsValue = Instance.new("IntValue")
+	coinsValue.Name = "Coins"
+	coinsValue.Value = Config.STARTING_COINS
+	coinsValue.Parent = leaderstats
+	refreshAttributes(player, Economy.Players[player])
+	task.spawn(function()
+		local character = player.Character or player.CharacterAdded:Wait()
+		local root = character:WaitForChild("HumanoidRootPart")
+		local base = Config.BASES[baseIndex]
+		root.CFrame = CFrame.new(base.position + Vector3.new(0, 4, 0))
+	end)
 end
 
 function Economy.removePlayer(player)
-	local state = Economy.players[player]
+	Economy.Players[player] = nil
+end
+
+function Economy.nextTierText(player)
+	local state = Economy.Players[player]
+	local ownedIncome = 0
 	if state then
-		for _, model in ipairs(state.owned) do
-			if model.Parent then
-				model:Destroy()
-			end
-		end
-		Economy.takenBases[state.baseIndex] = nil
+		for _, model in ipairs(state.owned) do ownedIncome += model:GetAttribute("Income") or 0 end
 	end
-	Economy.players[player] = nil
-end
-
-function Economy.refreshAttributes(player)
-	local state = Economy.players[player]
-	if not state then
-		return
-	end
-	player:SetAttribute("Coins", state.coins)
-	player:SetAttribute("Income", Economy.getIncome(player))
-	player:SetAttribute("Rebirths", state.rebirths)
-	player:SetAttribute("Slots", state.slots)
-	player:SetAttribute("Owned", #state.owned)
-	player:SetAttribute("IndexCount", state.indexCount)
-	player:SetAttribute("BaseIndex", state.baseIndex)
-	local now = os.time()
-	player:SetAttribute("LockLeft", math.max(0, state.lockUntil - now))
-	player:SetAttribute("LockCooldown", math.max(0, state.lockCooldownUntil - now))
-	player:SetAttribute("Multiplier", 1 + Config.REBIRTH_BONUS * state.rebirths)
-	local leaderstats = player:FindFirstChild("leaderstats")
-	if leaderstats then
-		local coinsStat = leaderstats:FindFirstChild("Coins")
-		if coinsStat then
-			coinsStat.Value = state.coins
-		end
-		local rebirthStat = leaderstats:FindFirstChild("Rebirths")
-		if rebirthStat then
-			rebirthStat.Value = state.rebirths
+	for _, def in ipairs(Config.CHARACTERS) do
+		if def.income > ownedIncome then
+			return "NEXT: " .. def.rarity:upper() .. " - " .. def.name .. " - $" .. tostring(def.income) .. "/s - $" .. tostring(def.price)
 		end
 	end
+	return "NEXT: SECRET MAXED - You own the best!"
 end
 
-function Economy.placeInBase(player, model)
-	local state = Economy.players[player]
-	if not state then
-		return
-	end
-	local base = Config.BASES[state.baseIndex]
-	local slot = #state.owned
-	local col = slot % 4
-	local row = math.floor(slot / 4)
-	local x = base.x - 6 + col * 4
-	local z = base.z - 4 + row * 4
-	model:PivotTo(CFrame.new(x, 0, z))
-end
-
-function Economy.floatIncomeText(player, income)
-	local state = Economy.players[player]
-	if not state then
-		return
-	end
-	local base = Config.BASES[state.baseIndex]
-	local anchor = Instance.new("Part")
-	anchor.Name = "IncomeFloat"
-	anchor.Size = Vector3.new(0.2, 0.2, 0.2)
-	anchor.Transparency = 1
-	anchor.CanCollide = false
-	anchor.Anchored = true
-	anchor.Position = Vector3.new(base.x, 8, base.z)
-	anchor.Parent = workspace
-	local gui = Instance.new("BillboardGui")
-	gui.Size = UDim2.fromOffset(160, 44)
-	gui.AlwaysOnTop = true
-	gui.Parent = anchor
-	local text = Instance.new("TextLabel")
-	text.Size = UDim2.fromScale(1, 1)
-	text.BackgroundTransparency = 1
-	text.Text = "+$" .. income
-	text.TextColor3 = Color3.fromRGB(120, 255, 120)
-	text.TextStrokeTransparency = 0
-	text.TextSize = 30
-	text.Font = Enum.Font.GothamBold
-	text.Parent = gui
-	task.spawn(function()
-		for _ = 1, 20 do
-			task.wait(0.075)
-			if anchor.Parent then
-				anchor.Position += Vector3.new(0, 0.25, 0)
-			end
-		end
-		anchor:Destroy()
-	end)
-end
-
-function Economy.startMythicWindow()
-	if Economy.mythicActive then
-		return
-	end
-	Economy.mythicActive = true
-	Economy.setGameState("MythicActive", true)
-	task.delay(Config.MYTHIC_WINDOW, function()
-		Economy.mythicActive = false
-		Economy.setGameState("MythicActive", false)
-	end)
-end
-
-function Economy.startGoldenHour()
-	while true do
-		task.wait(Config.GOLDEN_INTERVAL)
-		Economy.goldenActive = true
-		Economy.setGameState("GoldenActive", true)
-		Economy.notifyAll("golden", "GOLDEN HOUR — 2x INCOME!")
-		local lighting = game:GetService("Lighting")
-		lighting.Ambient = Color3.fromRGB(255, 220, 130)
-		task.wait(Config.GOLDEN_DURATION)
-		Economy.goldenActive = false
-		Economy.setGameState("GoldenActive", false)
-		lighting.Ambient = Color3.fromRGB(200, 200, 200)
-		for player, _ in pairs(Economy.players) do
-			Economy.refreshAttributes(player)
-		end
-	end
-end
-
-function Economy.setGameState(name, value)
-	local folder = ReplicatedStorage:FindFirstChild("GameState")
-	if folder then
-		folder:SetAttribute(name, value)
-	end
-end
-
-function Economy.notify(player, kind, text)
-	local notify = ReplicatedStorage:WaitForChild("BrainrotNotify")
-	notify:FireClient(player, kind, text)
-end
-
-function Economy.notifyAll(kind, text)
-	local notify = ReplicatedStorage:WaitForChild("BrainrotNotify")
-	notify:FireAllClients(kind, text)
-end
-
-function Economy.updateNextTierBoard(afterName)
-	local next = Config.getNextTier(afterName)
-	if not next then
-		return
-	end
-	local board = workspace:FindFirstChild("NextTierBoard")
-	if not board then
-		return
-	end
-	local gui = board:FindFirstChild("BoardGui")
-	if not gui then
-		return
-	end
-	local label = gui:FindFirstChild("BoardText")
-	if label then
-		label.Text = "NEXT TIER: " .. next.rarity:upper() .. " — " .. next.name .. " — $" .. next.rate .. "/s — $" .. next.price
-	end
-	Economy.setGameState("NextTier", next.name)
-end
-
-function Economy.start()
-	Players.PlayerAdded:Connect(function(player)
-		Economy.addPlayer(player)
-	end)
-	Players.PlayerRemoving:Connect(function(player)
-		Economy.removePlayer(player)
-	end)
-	for _, player in ipairs(Players:GetPlayers()) do
-		Economy.addPlayer(player)
-	end
-	task.spawn(function()
-		Economy.collectIncome()
-	end)
-	task.spawn(function()
-		Economy.startGoldenHour()
-	end)
+function Economy.startLoops()
 	task.spawn(function()
 		while true do
 			task.wait(1)
-			for player, _ in pairs(Economy.players) do
-				Economy.refreshAttributes(player)
+			Economy.GoldenCycle += 1
+			if Economy.GoldenCycle >= Config.GOLDEN_HOUR_CYCLE then
+				Economy.GoldenCycle = 0
+				Economy.GoldenLeft = Config.GOLDEN_HOUR_SECONDS
+			end
+			if Economy.GoldenLeft > 0 then Economy.GoldenLeft -= 1 end
+			if Economy.MythicLeft > 0 then Economy.MythicLeft -= 1 end
+			for _, player in ipairs(Players:GetPlayers()) do
+				local state = Economy.Players[player]
+				if state then
+					if state.lockLeft > 0 then state.lockLeft -= 1 end
+					if state.lockCooldown > 0 then state.lockCooldown -= 1 end
+					if state.protectLeft > 0 then state.protectLeft -= 1 end
+					Economy.collectIncome(player)
+					local board = workspace:FindFirstChild("NextTierBoard")
+					if board then
+						local gui = board:FindFirstChildOfClass("SurfaceGui")
+						local body = gui and gui:FindFirstChild("BoardBody")
+						if body then body.Text = Economy.nextTierText(player) end
+					end
+					local leader = player:FindFirstChild("leaderstats")
+					if leader then
+						local coinsValue = leader:FindFirstChild("Coins")
+						if coinsValue then coinsValue.Value = math.floor(state.coins) end
+					end
+				end
 			end
 		end
 	end)

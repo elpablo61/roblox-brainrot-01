@@ -1,190 +1,152 @@
--- Steal: carry a rival's brainrot home on your back. A locked base cannot be
--- stolen from, and a slap or a tsunami drops whatever you are carrying.
+-- Steal lets a player click a rival's brainrot and carry it home on their
+-- back, unless the owner's base lock is on or they are spawn-protected.
+-- A carried brainrot drops if the thief is slapped or hit by the tsunami.
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 
-local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 
 local Steal = {}
-Steal.carried = {}
+local carried = {}
 
 function Steal.attemptSteal(player, model)
-	local ownerId = model:GetAttribute("OwnerId") or 0
-	if ownerId == 0 or ownerId == player.UserId then
-		return false
-	end
-	local Economy = require(script.Parent:WaitForChild("Economy"))
-	local owner = Players:GetPlayerByUserId(ownerId)
-	if owner then
-		local ownerState = Economy.players[owner]
-		if ownerState and os.time() < ownerState.lockUntil then
-			Economy.notify(player, "denied", "That base is LOCKED!")
-			return false
-		end
-		if ownerState and os.time() < ownerState.protectedUntil then
-			Economy.notify(player, "denied", "Spawn protection is on!")
-			return false
-		end
-	end
-	if Steal.carried[player] then
-		Economy.notify(player, "denied", "You are already carrying one!")
-		return false
-	end
-	for carrier, carriedModel in pairs(Steal.carried) do
-		if carriedModel == model then
-			Steal.detachModel(carrier, model)
+	local ownerId = model:GetAttribute("OwnerId")
+	if not ownerId or ownerId == player.UserId then return false end
+	local victim = Players:GetPlayerByUserId(ownerId)
+	if not victim then return false end
+	local Economy = require(script.Parent.Economy)
+	local victimState = Economy.Players[victim]
+	if not victimState then return false end
+	if victimState.lockLeft > 0 then return false end
+	if victimState.protectLeft > 0 then return false end
+	if carried[player] then return false end
+	for _, owned in ipairs(victimState.owned) do
+		if owned == model then
+			table.remove(victimState.owned, table.find(victimState.owned, model))
 			break
 		end
 	end
-	Steal.attachModel(player, model)
-	Steal.carried[player] = model
 	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.WalkSpeed = 10
+	if not character then return false end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not root or not humanoid then return false end
+	local primary = model.PrimaryPart
+	if primary then
+		primary.Anchored = false
+		primary.CFrame = root.CFrame * CFrame.new(0, 1, 1.5)
 	end
-	if owner then
-		Economy.notify(owner, "stolen", "STOLEN! " .. player.Name .. " took your " .. (model:GetAttribute("CharName") or "brainrot") .. "!")
-	end
-	Economy.notify(player, "carrying", "Run it home to your base!")
+	local weld = Instance.new("Weld")
+	weld.Name = "CarryWeld"
+	weld.Part0 = root
+	weld.Part1 = primary
+	weld.C0 = CFrame.new(0, 1, 1.5)
+	weld.Parent = model
+	carried[player] = model
+	model:SetAttribute("CarriedBy", player.UserId)
+	humanoid.WalkSpeed = Config.STEAL_SLOW_SPEED
+	victim:SetAttribute("BannerText", "STOLEN! " .. (model:GetAttribute("CharName") or "Brainrot") .. " taken by " .. player.Name)
+	victim:SetAttribute("BannerUntil", os.time() + 5)
+	player:SetAttribute("BannerText", "STEAL! Run it home to your base!")
+	player:SetAttribute("BannerUntil", os.time() + 5)
+	Economy.refreshAttributes(victim, victimState)
+	task.spawn(function()
+		while carried[player] == model and model.Parent do
+			task.wait(0.5)
+			local state = Economy.Players[player]
+			if not state then break end
+			local base = Config.BASES[state.baseIndex]
+			local pos = root.Position
+			if math.abs(pos.X - base.position.X) < 14 and math.abs(pos.Z - base.position.Z) < 14 then
+				Steal.deliverCarried(player)
+				break
+			end
+		end
+	end)
 	return true
 end
 
 function Steal.lockBase(player)
-	local Economy = require(script.Parent:WaitForChild("Economy"))
-	local state = Economy.players[player]
-	if not state then
-		return false
-	end
-	local now = os.time()
-	if now < state.lockCooldownUntil then
-		Economy.notify(player, "denied", "Lock recharging: " .. (state.lockCooldownUntil - now) .. "s left")
-		return false
-	end
-	if now < state.lockUntil then
-		Economy.notify(player, "denied", "Base is already locked!")
-		return false
-	end
-	local duration = Config.LOCK_DURATION + Config.LOCK_PER_REBIRTH * state.rebirths
-	state.lockUntil = now + duration
-	state.lockCooldownUntil = state.lockUntil + Config.LOCK_COOLDOWN
-	Economy.refreshAttributes(player)
-	Economy.notify(player, "locked", "Base LOCKED for " .. duration .. "s!")
+	local Economy = require(script.Parent.Economy)
+	local state = Economy.Players[player]
+	if not state then return false end
+	if state.lockCooldown > 0 or state.lockLeft > 0 then return false end
+	state.lockLeft = Config.LOCK_SECONDS + Config.LOCK_PER_REBIRTH * state.rebirths
+	state.lockCooldown = Config.LOCK_COOLDOWN + state.lockLeft
+	Economy.refreshAttributes(player, state)
 	return true
 end
 
-function Steal.attachModel(player, model)
-	local character = player.Character
-	local torso = character and (character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso"))
-	if not torso then
-		return
-	end
-	for _, part in ipairs(model:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.Anchored = false
-			part.CanCollide = false
-		end
-	end
+function Steal.dropCarried(player)
+	local model = carried[player]
+	if not model then return end
+	carried[player] = nil
+	local weld = model:FindFirstChild("CarryWeld")
+	if weld then weld:Destroy() end
 	local primary = model.PrimaryPart
 	if primary then
-		local weld = Instance.new("Weld")
-		weld.Name = "CarryWeld"
-		weld.Part0 = torso
-		weld.Part1 = primary
-		weld.C0 = CFrame.new(0, 0, 1.6)
-		weld.Parent = primary
+		primary.Anchored = true
+		primary.CFrame = CFrame.new(primary.Position.X, 3, primary.Position.Z)
 	end
-end
-
-function Steal.detachModel(player, model)
-	for _, descendant in ipairs(model:GetDescendants()) do
-		if descendant:IsA("Weld") and descendant.Name == "CarryWeld" then
-			descendant:Destroy()
-		end
-	end
-	for _, part in ipairs(model:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.Anchored = true
-			part.CanCollide = true
-		end
-	end
+	model:SetAttribute("CarriedBy", nil)
+	model:SetAttribute("OwnerId", nil)
+	model:SetAttribute("Price", 0)
 	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.WalkSpeed = 16
+	if character then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then humanoid.WalkSpeed = Config.NORMAL_WALK_SPEED end
+	end
+	local label = model:FindFirstChild("Label", true)
+	if label then
+		local text = label:FindFirstChildOfClass("TextLabel")
+		if text then text.Text = (model:GetAttribute("CharName") or "Brainrot") .. " - DROPPED! Click to claim FREE" end
 	end
 end
 
-function Steal.dropCarried(player)
-	local model = Steal.carried[player]
-	if not model then
+function Steal.deliverCarried(player)
+	local model = carried[player]
+	if not model then return end
+	carried[player] = nil
+	local weld = model:FindFirstChild("CarryWeld")
+	if weld then weld:Destroy() end
+	local Economy = require(script.Parent.Economy)
+	local state = Economy.Players[player]
+	if not state then return end
+	if #state.owned >= state.slotsMax then
+		Steal.dropCarried(player)
 		return
 	end
-	Steal.carried[player] = nil
+	model:SetAttribute("OwnerId", player.UserId)
+	model:SetAttribute("CarriedBy", nil)
+	table.insert(state.owned, model)
+	local name = model:GetAttribute("CharName") or model.Name
+	if not state.seen[name] then
+		state.seen[name] = true
+		state.indexCount += 1
+	end
+	local base = Config.BASES[state.baseIndex]
+	local slot = #state.owned
+	local ox = ((slot - 1) % 5) * 4 - 8
+	local oz = math.floor((slot - 1) / 5) * 4 - 2
+	local primary = model.PrimaryPart
+	if primary then
+		primary.Anchored = true
+		primary.CFrame = CFrame.new(base.position + Vector3.new(ox, 3, oz))
+	end
 	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	Steal.detachModel(player, model)
-	if root and model.Parent then
-		model:PivotTo(CFrame.new(root.Position + Vector3.new(3, 1, 0)))
+	if character then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then humanoid.WalkSpeed = Config.NORMAL_WALK_SPEED end
 	end
-	local Economy = require(script.Parent:WaitForChild("Economy"))
-	Economy.notify(player, "dropped", "You dropped the brainrot!")
+	Economy.refreshAttributes(player, state)
 end
 
-function Steal.completeSteal(player, model)
-	local Economy = require(script.Parent:WaitForChild("Economy"))
-	local ownerId = model:GetAttribute("OwnerId") or 0
-	local oldOwner = Players:GetPlayerByUserId(ownerId)
-	Steal.carried[player] = nil
-	Steal.detachModel(player, model)
-	local state = Economy.players[player]
-	if state and oldOwner and Economy.players[oldOwner] then
-		local oldState = Economy.players[oldOwner]
-		for i, owned in ipairs(oldState.owned) do
-			if owned == model then
-				table.remove(oldState.owned, i)
-				break
-			end
-		end
-		Economy.refreshAttributes(oldOwner)
-	end
-	if state then
-		model:SetAttribute("OwnerId", player.UserId)
-		table.insert(state.owned, model)
-		Economy.placeInBase(player, model)
-		local charName = model:GetAttribute("CharName") or "Brainrot"
-		if not state.index[charName] then
-			state.index[charName] = true
-			state.indexCount += 1
-		end
-		Economy.refreshAttributes(player)
-		Economy.notify(player, "stolen", "You stole " .. charName .. "!")
-	end
+function Steal.isCarrying(player)
+	return carried[player] ~= nil
 end
 
-function Steal.start()
-	RunService.Heartbeat:Connect(function()
-		for player, model in pairs(Steal.carried) do
-			if not model.Parent or not player.Parent then
-				Steal.carried[player] = nil
-			else
-				local Economy = require(script.Parent:WaitForChild("Economy"))
-				local state = Economy.players[player]
-				if state then
-					local character = player.Character
-					local root = character and character:FindFirstChild("HumanoidRootPart")
-					if root then
-						local base = Config.BASES[state.baseIndex]
-						if math.abs(root.Position.X - base.x) <= 11 and math.abs(root.Position.Z - base.z) <= 11 then
-							Steal.completeSteal(player, model)
-						end
-					end
-				end
-			end
-		end
-	end)
+function Steal.onPlayerRemoving(player)
+	if carried[player] then Steal.dropCarried(player) end
 end
 
 return Steal

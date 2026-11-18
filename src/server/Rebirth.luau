@@ -1,37 +1,21 @@
--- Rebirth: spend $10,000 to reset your coins for a permanent +25% income
--- multiplier and +2 base slots. The ladder never ends.
+-- Rebirth resets coins for a permanent +25% income multiplier and +2 base
+-- slots. Owned brainrots stay; the player keeps earning while climbing.
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 
 local Rebirth = {}
 
 function Rebirth.applyRebirth(player)
-	local Economy = require(script.Parent:WaitForChild("Economy"))
-	local state = Economy.players[player]
-	if not state then
-		return false
-	end
-	if state.coins < Config.REBIRTH_COST then
-		Economy.notify(player, "denied", "Rebirth costs $" .. Config.REBIRTH_COST .. " — you have $" .. state.coins)
-		return false
-	end
-	for _, model in ipairs(state.owned) do
-		if model.Parent then
-			model:Destroy()
-		end
-	end
-	state.owned = {}
-	state.index = {}
-	state.indexCount = 0
-	state.coins = 0
+	local Economy = require(script.Parent.Economy)
+	local state = Economy.Players[player]
+	if not state then return false end
+	if state.coins < Config.REBIRTH_COST then return false end
+	state.coins = Config.STARTING_COINS
 	state.rebirths += 1
-	state.slots += Config.REBIRTH_EXTRA_SLOTS
-	Economy.refreshAttributes(player)
-	local mult = 1 + Config.REBIRTH_BONUS * state.rebirths
-	Economy.notify(player, "rebirth", "REBIRTH x" .. mult .. "! +" .. Config.REBIRTH_EXTRA_SLOTS .. " base slots!")
-	Economy.notifyAll("effect-rebirth", player.Name)
+	state.slotsMax += Config.REBIRTH_EXTRA_SLOTS
+	player:SetAttribute("BannerText", "REBIRTH x" .. tostring(state.rebirths) .. "! Income x" .. string.format("%.2f", Config.REBIRTH_MULTIPLIER ^ state.rebirths) .. " - SLOTS " .. tostring(state.slotsMax))
+	player:SetAttribute("BannerUntil", os.time() + 5)
+	Economy.refreshAttributes(player, state)
 	return true
 end
 

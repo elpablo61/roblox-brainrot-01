@@ -1,289 +1,183 @@
--- Conveyor: spawns brainrots on the red carpet, walks them down the belt,
--- despawns them at the end. Clicking one buys it, or steals it if owned.
+-- Conveyor spawns brainrot characters on the red carpet, walks them along
+-- the belt, and despawns them at the end. Clicking one buys it (or steals it).
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 
 local Conveyor = {}
-Conveyor.live = {}
+local beltModels = {}
+local folder = nil
+
+local function pickWeighted(list)
+	local total = 0
+	for _, entry in ipairs(list) do total += entry.weight end
+	local roll = math.random() * total
+	for _, entry in ipairs(list) do
+		roll -= entry.weight
+		if roll <= 0 then return entry end
+	end
+	return list[#list]
+end
+
+local function makeAccessory(kind, body, accent)
+	local part = Instance.new("Part")
+	part.Anchored = true
+	part.CanCollide = false
+	if kind == "TopHat" then
+		part.Size = Vector3.new(1.4, 1.2, 1.4)
+		part.Color = accent
+		part.Position = Vector3.new(0, 1.9, 0)
+	elseif kind == "Cap" then
+		part.Size = Vector3.new(1.6, 0.4, 1.6)
+		part.Color = accent
+		part.Position = Vector3.new(0, 1.6, 0)
+	elseif kind == "Sneakers" then
+		part.Size = Vector3.new(1.8, 0.4, 1.0)
+		part.Color = accent
+		part.Position = Vector3.new(0, -1.3, 0.6)
+	elseif kind == "Glasses" then
+		part.Size = Vector3.new(1.6, 0.4, 0.3)
+		part.Color = Color3.fromRGB(20, 20, 20)
+		part.Position = Vector3.new(0, 1.2, 0.9)
+	elseif kind == "Sunglasses" then
+		part.Size = Vector3.new(1.7, 0.5, 0.3)
+		part.Color = Color3.fromRGB(10, 10, 10)
+		part.Position = Vector3.new(0, 1.2, 0.9)
+	elseif kind == "Headphones" then
+		part.Size = Vector3.new(2.0, 0.5, 1.2)
+		part.Color = accent
+		part.Position = Vector3.new(0, 1.5, 0)
+	elseif kind == "PirateHat" then
+		part.Size = Vector3.new(2.0, 0.5, 1.6)
+		part.Color = accent
+		part.Position = Vector3.new(0, 1.8, 0)
+	elseif kind == "ChefHat" then
+		part.Size = Vector3.new(1.4, 1.0, 1.4)
+		part.Color = Color3.fromRGB(255, 255, 255)
+		part.Position = Vector3.new(0, 1.9, 0)
+	elseif kind == "Crown" then
+		part.Size = Vector3.new(1.5, 0.6, 1.5)
+		part.Color = Color3.fromRGB(255, 210, 40)
+		part.Position = Vector3.new(0, 1.9, 0)
+	end
+	return part
+end
+
+local function buildLabel(model, def, mutation, income)
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "Label"
+	gui.Size = UDim2.fromOffset(220, 80)
+	gui.StudsOffset = Vector3.new(0, 3.5, 0)
+	gui.AlwaysOnTop = true
+	gui.Parent = model
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.fromScale(1, 1)
+	text.BackgroundTransparency = 0.4
+	text.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	text.TextColor3 = Color3.fromRGB(255, 255, 255)
+	text.TextScaled = true
+	text.Font = Enum.Font.GothamBold
+	text.Text = def.name .. "\n" .. def.rarity:upper() .. "  $" .. tostring(income) .. "/s" .. (mutation.name ~= "None" and ("  " .. mutation.name .. " x" .. tostring(mutation.multiplier)) or "") .. "\nBUY $" .. tostring(def.price)
+	text.Parent = gui
+	return text
+end
 
 function Conveyor.spawnBrainrot()
-	local char = Conveyor.pickCharacter()
-	local mutation = Conveyor.rollMutation()
-	local rate = char.rate * mutation.mult
-	local model = Conveyor.buildCharacterModel(char, mutation, rate)
-	model:SetAttribute("CharName", char.name)
-	model:SetAttribute("Rarity", char.rarity)
-	model:SetAttribute("Rate", rate)
-	model:SetAttribute("Price", char.price)
-	model:SetAttribute("Mutation", mutation.name)
-	model:SetAttribute("OwnerId", 0)
-	model:PivotTo(CFrame.new(0, 0, Config.BELT_START_Z))
-	model.Parent = workspace
-	table.insert(Conveyor.live, { model = model, progress = 0, char = char, mutation = mutation, rate = rate })
-	Conveyor.wireClick(model)
-	if char.rarity == "Mythic" or char.rarity == "Secret" then
-		Conveyor.announceMythicSpawn(char, mutation, rate)
+	local rarityEntry = pickWeighted(Config.RARITY_WEIGHTS)
+	local pool = {}
+	for _, def in ipairs(Config.CHARACTERS) do
+		if def.rarity == rarityEntry.rarity then table.insert(pool, def) end
 	end
-	return model
-end
-
-function Conveyor.pickCharacter()
-	local total = 0
-	for _, char in ipairs(Config.CHARACTERS) do
-		total += Config.RARITIES[char.rarity].weight
-	end
-	local roll = math.random() * total
-	for _, char in ipairs(Config.CHARACTERS) do
-		roll -= Config.RARITIES[char.rarity].weight
-		if roll <= 0 then
-			return char
-		end
-	end
-	return Config.CHARACTERS[1]
-end
-
-function Conveyor.rollMutation()
-	local roll = math.random(100)
-	local acc = 0
-	for _, mut in ipairs(Config.MUTATIONS) do
-		acc += mut.chance
-		if roll <= acc then
-			return mut
-		end
-	end
-	return Config.MUTATIONS[1]
-end
-
-function Conveyor.buildCharacterModel(char, mutation, rate)
+	local def = pool[math.random(#pool)]
+	local mutation = pickWeighted(Config.MUTATIONS)
+	local income = def.income * mutation.multiplier
 	local model = Instance.new("Model")
-	model.Name = char.name
+	model.Name = def.name
 	local body = Instance.new("Part")
 	body.Name = "Body"
-	body.Size = Vector3.new(3, 3, 2)
-	body.Position = Vector3.new(0, 2, 0)
-	body.Color = char.body
+	body.Size = Vector3.new(2.4, 2.4, 2.4)
+	body.Color = mutation.tint or def.body
 	body.Material = Enum.Material.SmoothPlastic
 	body.Anchored = true
+	body.CanCollide = false
 	body.Parent = model
 	local head = Instance.new("Part")
 	head.Name = "Head"
 	head.Shape = Enum.PartType.Ball
-	head.Size = Vector3.new(2.2, 2.2, 2.2)
-	head.Position = Vector3.new(0, 4.6, 0)
-	head.Color = char.head
-	head.Material = Enum.Material.SmoothPlastic
+	head.Size = Vector3.new(1.8, 1.8, 1.8)
+	head.Color = mutation.tint or def.body
 	head.Anchored = true
+	head.CanCollide = false
+	head.Position = Vector3.new(0, 2.0, 0)
 	head.Parent = model
-	local eyeL = Instance.new("Part")
-	eyeL.Name = "EyeL"
-	eyeL.Size = Vector3.new(0.35, 0.5, 0.2)
-	eyeL.Position = Vector3.new(-0.5, 4.8, 1.1)
-	eyeL.Color = Color3.fromRGB(20, 20, 20)
-	eyeL.Anchored = true
-	eyeL.Parent = model
-	local eyeR = eyeL:Clone()
-	eyeR.Name = "EyeR"
-	eyeR.Position = Vector3.new(0.5, 4.8, 1.1)
-	eyeR.Parent = model
-	local footL = Instance.new("Part")
-	footL.Name = "FootL"
-	footL.Size = Vector3.new(1, 0.6, 1.4)
-	footL.Position = Vector3.new(-0.8, 0.3, 0)
-	footL.Color = Color3.fromRGB(40, 40, 40)
-	footL.Anchored = true
-	footL.Parent = model
-	local footR = footL:Clone()
-	footR.Name = "FootR"
-	footR.Position = Vector3.new(0.8, 0.3, 0)
-	footR.Parent = model
-	Conveyor.buildAccessory(model, char.accessory)
-	if mutation.name ~= "None" then
-		local tint = Instance.new("Part")
-		tint.Name = "MutationGlow"
-		tint.Size = Vector3.new(3.4, 3.4, 2.4)
-		tint.Position = Vector3.new(0, 2, 0)
-		tint.Color = mutation.color
-		tint.Transparency = 0.7
-		tint.Material = Enum.Material.Neon
-		tint.Anchored = true
-		tint.CanCollide = false
-		tint.Parent = model
-	end
-	local label = Instance.new("BillboardGui")
-	label.Name = "BrainrotLabel"
-	label.Size = UDim2.fromOffset(240, 96)
-	label.StudsOffsetWorldSpace = Vector3.new(0, 6.5, 0)
-	label.AlwaysOnTop = true
-	label.MaxDistance = 250
-	label.Parent = model
-	local nameText = Instance.new("TextLabel")
-	nameText.Name = "Name"
-	nameText.Size = UDim2.new(1, 0, 0, 34)
-	nameText.Position = UDim2.new(0, 0, 0, 0)
-	nameText.BackgroundTransparency = 1
-	nameText.Text = char.name
-	nameText.TextColor3 = Color3.fromRGB(255, 255, 255)
-	nameText.TextStrokeTransparency = 0
-	nameText.TextScaled = false
-	nameText.TextSize = 24
-	nameText.Font = Enum.Font.GothamBold
-	nameText.Parent = label
-	local rarityText = Instance.new("TextLabel")
-	rarityText.Name = "Rarity"
-	rarityText.Size = UDim2.new(1, 0, 0, 30)
-	rarityText.Position = UDim2.new(0, 0, 0, 32)
-	rarityText.BackgroundTransparency = 1
-	rarityText.Text = char.rarity:upper() .. "  $" .. rate .. "/s"
-	rarityText.TextColor3 = Config.RARITIES[char.rarity].color
-	rarityText.TextStrokeTransparency = 0
-	rarityText.TextSize = 22
-	rarityText.Font = Enum.Font.GothamBold
-	rarityText.Parent = label
-	local priceText = Instance.new("TextLabel")
-	priceText.Name = "Price"
-	priceText.Size = UDim2.new(1, 0, 0, 30)
-	priceText.Position = UDim2.new(0, 0, 0, 62)
-	priceText.BackgroundTransparency = 1
-	priceText.Text = "BUY $" .. char.price
-	if mutation.name ~= "None" then
-		priceText.Text = mutation.name:upper() .. " x" .. mutation.mult .. "  BUY $" .. char.price
-	end
-	priceText.TextColor3 = Color3.fromRGB(255, 220, 60)
-	priceText.TextStrokeTransparency = 0
-	priceText.TextSize = 22
-	priceText.Font = Enum.Font.GothamBold
-	priceText.Parent = label
+	local accessory = makeAccessory(def.accessory, def.body, def.accent)
+	accessory.Parent = model
+	local feet = Instance.new("Part")
+	feet.Name = "Feet"
+	feet.Size = Vector3.new(2.0, 0.5, 1.4)
+	feet.Color = def.accent
+	feet.Anchored = true
+	feet.CanCollide = false
+	feet.Position = Vector3.new(0, -1.4, 0)
+	feet.Parent = model
 	model.PrimaryPart = body
+	model:SetAttribute("CharName", def.name)
+	model:SetAttribute("Rarity", def.rarity)
+	model:SetAttribute("Income", income)
+	model:SetAttribute("BaseIncome", def.income)
+	model:SetAttribute("Price", def.price)
+	model:SetAttribute("Mutation", mutation.name)
+	model:SetAttribute("Belt", true)
+	buildLabel(model, def, mutation, income)
+	local click = Instance.new("ClickDetector")
+	click.MaxActivationDistance = 200
+	click.Parent = model
+	click.MouseClick:Connect(function(player)
+		local Economy = require(script.Parent.Economy)
+		Economy.buyBrainrot(player, model)
+	end)
+	model:PivotTo(CFrame.new(Config.BELT_START_X, 3, Config.BELT_Z))
+	model.Parent = folder
+	table.insert(beltModels, model)
+	if def.rarity == "Mythic" or def.rarity == "Secret" then
+		local Economy = require(script.Parent.Economy)
+		Economy.startMythicWindow()
+		for _, player in ipairs(Players:GetPlayers()) do
+			player:SetAttribute("BannerText", "MYTHIC SPAWNED: " .. def.name .. " - 2x INCOME 60s!")
+			player:SetAttribute("BannerUntil", os.time() + 5)
+		end
+	end
 	return model
 end
 
-function Conveyor.buildAccessory(model, kind)
-	local function part(name, size, pos, color)
-		local p = Instance.new("Part")
-		p.Name = name
-		p.Size = size
-		p.Position = pos
-		p.Color = color
-		p.Material = Enum.Material.SmoothPlastic
-		p.Anchored = true
-		p.Parent = model
-		return p
-	end
-	if kind == "TopHat" then
-		part("HatTop", Vector3.new(1.4, 1.6, 1.4), Vector3.new(0, 6.4, 0), Color3.fromRGB(30, 30, 30))
-		part("HatBrim", Vector3.new(2.6, 0.25, 2.6), Vector3.new(0, 5.6, 0), Color3.fromRGB(30, 30, 30))
-	elseif kind == "Sneakers" then
-		part("ShoeL", Vector3.new(1.1, 0.7, 1.6), Vector3.new(-0.8, 0.35, 0.3), Color3.fromRGB(255, 255, 255))
-		part("ShoeR", Vector3.new(1.1, 0.7, 1.6), Vector3.new(0.8, 0.35, 0.3), Color3.fromRGB(255, 255, 255))
-	elseif kind == "ChefHat" then
-		part("ChefTop", Vector3.new(2, 1.4, 2), Vector3.new(0, 6.2, 0), Color3.fromRGB(255, 255, 255))
-		part("ChefBand", Vector3.new(2.2, 0.5, 2.2), Vector3.new(0, 5.5, 0), Color3.fromRGB(240, 240, 240))
-	elseif kind == "Glasses" then
-		part("LensL", Vector3.new(0.9, 0.9, 0.2), Vector3.new(-0.55, 4.8, 1.15), Color3.fromRGB(20, 20, 20))
-		part("LensR", Vector3.new(0.9, 0.9, 0.2), Vector3.new(0.55, 4.8, 1.15), Color3.fromRGB(20, 20, 20))
-		part("Bridge", Vector3.new(0.5, 0.2, 0.2), Vector3.new(0, 4.8, 1.15), Color3.fromRGB(20, 20, 20))
-	elseif kind == "Headphones" then
-		part("CupL", Vector3.new(0.5, 1.1, 1), Vector3.new(-1.2, 4.6, 0), Color3.fromRGB(255, 60, 120))
-		part("CupR", Vector3.new(0.5, 1.1, 1), Vector3.new(1.2, 4.6, 0), Color3.fromRGB(255, 60, 120))
-		part("Band", Vector3.new(2.6, 0.3, 0.4), Vector3.new(0, 5.7, 0), Color3.fromRGB(255, 60, 120))
-	elseif kind == "Shades" then
-		part("ShadeBar", Vector3.new(2, 0.7, 0.25), Vector3.new(0, 4.9, 1.12), Color3.fromRGB(10, 10, 10))
-	elseif kind == "PirateHat" then
-		part("PirateTop", Vector3.new(2.8, 0.5, 2), Vector3.new(0, 5.8, 0), Color3.fromRGB(25, 25, 25))
-		part("PiratePeak", Vector3.new(1.2, 0.8, 1.2), Vector3.new(0, 6.2, 0), Color3.fromRGB(25, 25, 25))
-	elseif kind == "Crown" then
-		part("CrownBase", Vector3.new(2, 0.7, 2), Vector3.new(0, 5.8, 0), Color3.fromRGB(255, 210, 0))
-		part("Spike1", Vector3.new(0.4, 0.9, 0.4), Vector3.new(-0.7, 6.4, 0), Color3.fromRGB(255, 210, 0))
-		part("Spike2", Vector3.new(0.4, 1.1, 0.4), Vector3.new(0, 6.5, 0), Color3.fromRGB(255, 210, 0))
-		part("Spike3", Vector3.new(0.4, 0.9, 0.4), Vector3.new(0.7, 6.4, 0), Color3.fromRGB(255, 210, 0))
-	elseif kind == "BowTie" then
-		part("BowL", Vector3.new(0.9, 0.7, 0.3), Vector3.new(-0.6, 3.2, 1.05), Color3.fromRGB(200, 0, 0))
-		part("BowR", Vector3.new(0.9, 0.7, 0.3), Vector3.new(0.6, 3.2, 1.05), Color3.fromRGB(200, 0, 0))
-	elseif kind == "Cup" then
-		part("LatteCup", Vector3.new(0.9, 1.1, 0.9), Vector3.new(0, 6, 0), Color3.fromRGB(255, 255, 255))
-		part("LatteTop", Vector3.new(1, 0.3, 1), Vector3.new(0, 6.6, 0), Color3.fromRGB(180, 120, 60))
-	elseif kind == "Ears" then
-		part("EarL", Vector3.new(0.6, 1.4, 0.4), Vector3.new(-0.8, 5.9, 0), Color3.fromRGB(120, 70, 20))
-		part("EarR", Vector3.new(0.6, 1.4, 0.4), Vector3.new(0.8, 5.9, 0), Color3.fromRGB(120, 70, 20))
-	elseif kind == "Halo" then
-		local halo = part("HaloRing", Vector3.new(2.4, 0.25, 2.4), Vector3.new(0, 6.1, 0), Color3.fromRGB(255, 230, 100))
-		halo.Material = Enum.Material.Neon
-	elseif kind == "Wings" then
-		part("WingL", Vector3.new(0.3, 2.2, 1.6), Vector3.new(-1.9, 3, 0), Color3.fromRGB(255, 255, 255))
-		part("WingR", Vector3.new(0.3, 2.2, 1.6), Vector3.new(1.9, 3, 0), Color3.fromRGB(255, 255, 255))
-	end
-end
-
-function Conveyor.wireClick(model)
-	local detector = Instance.new("ClickDetector")
-	detector.MaxActivationDistance = 40
-	detector.Parent = model
-	detector.MouseClick:Connect(function(player)
-		local ownerId = model:GetAttribute("OwnerId") or 0
-		if ownerId ~= 0 then
-			local Steal = require(script.Parent:WaitForChild("Steal"))
-			Steal.attemptSteal(player, model)
-		else
-			local Economy = require(script.Parent:WaitForChild("Economy"))
-			Economy.buyBrainrot(player, model)
-		end
-	end)
-end
-
-function Conveyor.announceMythicSpawn(char, mutation, rate)
-	local notify = ReplicatedStorage:WaitForChild("BrainrotNotify")
-	notify:FireAllClients("mythic", char.name .. "  " .. char.rarity:upper() .. "  $" .. rate .. "/s")
-	local Economy = require(script.Parent:WaitForChild("Economy"))
-	Economy.startMythicWindow()
-end
-
-function Conveyor.removeFromBelt(model)
-	for i, entry in ipairs(Conveyor.live) do
-		if entry.model == model then
-			table.remove(Conveyor.live, i)
-			return true
-		end
-	end
-	return false
-end
-
-function Conveyor.isOnBelt(model)
-	for _, entry in ipairs(Conveyor.live) do
-		if entry.model == model then
-			return true
-		end
-	end
-	return false
-end
-
 function Conveyor.start()
-	for _ = 1, 3 do
-		Conveyor.spawnBrainrot()
-	end
+	folder = Instance.new("Folder")
+	folder.Name = "BeltBrainrots"
+	folder.Parent = workspace
 	task.spawn(function()
 		while true do
-			task.wait(Config.SPAWN_CHECK_SECONDS)
-			if #Conveyor.live < Config.BELT_MAX_LIVE then
-				Conveyor.spawnBrainrot()
-			end
+			task.wait(Config.BELT_SPAWN_EVERY)
+			Conveyor.spawnBrainrot()
 		end
 	end)
 	RunService.Heartbeat:Connect(function(dt)
-		for i = #Conveyor.live, 1, -1 do
-			local entry = Conveyor.live[i]
-			if not entry.model.Parent then
-				table.remove(Conveyor.live, i)
-			else
-				entry.progress += Config.BELT_SPEED * dt
-				local z = Config.BELT_START_Z + entry.progress
-				entry.model:PivotTo(CFrame.new(0, 0, z))
-				if z >= Config.BELT_END_Z then
-					entry.model:Destroy()
-					table.remove(Conveyor.live, i)
+		for i = #beltModels, 1, -1 do
+			local model = beltModels[i]
+			if not model.Parent then
+				table.remove(beltModels, i)
+			elseif model:GetAttribute("Belt") then
+				local pos = model:GetPivot().Position
+				local nextX = pos.X + Config.BELT_SPEED * dt
+				if nextX >= Config.BELT_END_X then
+					model:Destroy()
+					table.remove(beltModels, i)
+				else
+					model:PivotTo(CFrame.new(nextX, 3, Config.BELT_Z))
 				end
+			else
+				table.remove(beltModels, i)
 			end
 		end
 	end)

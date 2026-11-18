@@ -1,82 +1,67 @@
--- Effects: buy/wave/steal/rebirth feedback — particle bursts, banners and
--- sounds. Every game event has a visible form, never sound alone.
+-- Effects plays buy and wave feedback on the client: particles, a flash
+-- of light at the bought brainrot, and a screen flash when the tsunami hits.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
 
 local player = Players.LocalPlayer
-local notify = ReplicatedStorage:WaitForChild("BrainrotNotify")
-
 local Effects = {}
 
-function Effects.playBuyEffect(data)
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not root then
-		return
-	end
+function Effects.playBuyEffect(position)
+	local sparkle = Instance.new("Part")
+	sparkle.Name = "BuySparkle"
+	sparkle.Anchored = true
+	sparkle.CanCollide = false
+	sparkle.Transparency = 1
+	sparkle.Size = Vector3.new(1, 1, 1)
+	sparkle.CFrame = CFrame.new(position + Vector3.new(0, 2, 0))
+	sparkle.Parent = workspace
 	local emitter = Instance.new("ParticleEmitter")
-	emitter.Color = ColorSequence.new(Color3.fromRGB(255, 220, 60))
-	emitter.Size = NumberSequence.new(1.2)
-	emitter.Lifetime = NumberRange.new(0.6, 1)
+	emitter.Color = ColorSequence.new(Color3.fromRGB(255, 210, 40))
+	emitter.Size = NumberSequence.new(1.5)
+	emitter.Lifetime = NumberRange.new(0.8)
 	emitter.Rate = 60
-	emitter.Speed = NumberRange.new(8, 16)
+	emitter.Speed = NumberRange.new(8)
 	emitter.SpreadAngle = Vector2.new(180, 180)
-	emitter.Parent = root
-	Effects.playSound("rbxasset://sounds/electronicpingshort.wav", 0.7)
-	task.delay(1.2, function()
-		emitter:Destroy()
+	emitter.Parent = sparkle
+	local light = Instance.new("PointLight")
+	light.Color = Color3.fromRGB(255, 210, 40)
+	light.Range = 18
+	light.Brightness = 3
+	light.Parent = sparkle
+	TweenService:Create(light, TweenInfo.new(1), { Brightness = 0 }):Play()
+	task.delay(1, function()
+		emitter.Enabled = false
 	end)
+	Debris:AddItem(sparkle, 2)
 end
 
-function Effects.playWaveEffect()
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not root then
-		return
-	end
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Color = ColorSequence.new(Color3.fromRGB(0, 150, 255))
-	emitter.Size = NumberSequence.new(2)
-	emitter.Lifetime = NumberRange.new(0.8, 1.4)
-	emitter.Rate = 80
-	emitter.Speed = NumberRange.new(10, 20)
-	emitter.SpreadAngle = Vector2.new(180, 180)
-	emitter.Parent = root
-	Effects.playSound("rbxasset://sounds/impact_water.mp3", 0.7)
-	task.delay(1.6, function()
-		emitter:Destroy()
-	end)
-end
+local buyEvent = ReplicatedStorage:WaitForChild("BuyEffectEvent")
+buyEvent.OnClientEvent:Connect(function(position)
+	Effects.playBuyEffect(position)
+end)
 
-function Effects.playSound(soundId, volume)
-	local sound = Instance.new("Sound")
-	sound.SoundId = soundId
-	sound.Volume = volume or 0.5
-	sound.Parent = player:WaitForChild("PlayerGui")
-	sound:Play()
-	sound.Ended:Connect(function()
-		sound:Destroy()
-	end)
-	task.delay(5, function()
-		if sound.Parent then
-			sound:Destroy()
+player:GetAttributeChangedSignal("BannerText"):Connect(function()
+	local banner = player:GetAttribute("BannerText") or ""
+	if string.find(banner, "TSUNAMI") then
+		local gui = player:FindFirstChild("PlayerGui")
+		if gui then
+			local hud = gui:FindFirstChild("BrainrotHUD")
+			if hud then
+				local flash = Instance.new("Frame")
+				flash.Name = "WaveFlash"
+				flash.Size = UDim2.fromScale(1, 1)
+				flash.BackgroundColor3 = Color3.fromRGB(40, 140, 255)
+				flash.BackgroundTransparency = 0.7
+				flash.BorderSizePixel = 0
+				flash.Parent = hud
+				TweenService:Create(flash, TweenInfo.new(1.5), { BackgroundTransparency = 1 }):Play()
+				Debris:AddItem(flash, 2)
+			end
 		end
-	end)
-end
-
-notify.OnClientEvent:Connect(function(kind, text)
-	if kind == "bought" then
-		Effects.playBuyEffect(text)
-	elseif kind == "wave-warning" or kind == "wave-sweep" then
-		Effects.playWaveEffect()
-	elseif kind == "effect-buy" then
-		if text ~= player.Name then
-			Effects.playBuyEffect(text)
-		end
-	elseif kind == "rebirth" or kind == "effect-rebirth" then
-		Effects.playSound("rbxasset://sounds/electronicpingshort.wav", 0.8)
-	elseif kind == "golden" or kind == "mythic" then
-		Effects.playSound("rbxasset://sounds/electronicpingshort.wav", 0.8)
 	end
 end)
+
+return Effects

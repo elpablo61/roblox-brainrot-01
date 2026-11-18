@@ -1,82 +1,60 @@
--- Slap: every player spawns with a Slap tool. Click to shove the nearest
--- rival backwards — and knock loose any brainrot they are carrying.
+-- Slap hands every player a Slap tool on spawn. Clicking it shoves the
+-- nearest rival back and drops any brainrot they are carrying.
 
 local Players = game:GetService("Players")
 
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
+
 local Slap = {}
 
-function Slap.slapPlayer(player, target)
-	if not target or target == player then
-		return false
-	end
+function Slap.slapPlayer(player, targetPlayer)
+	if not player or not targetPlayer or player == targetPlayer then return false end
 	local character = player.Character
-	local targetCharacter = target.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
-	if not root or not targetRoot then
-		return false
-	end
-	local distance = (targetRoot.Position - root.Position).Magnitude
-	if distance > 14 then
-		return false
-	end
-	local direction = (targetRoot.Position - root.Position).Unit
-	targetRoot:ApplyImpulse(direction * 6000 + Vector3.new(0, 2000, 0))
-	local Steal = require(script.Parent:WaitForChild("Steal"))
-	Steal.dropCarried(target)
+	local targetChar = targetPlayer.Character
+	if not character or not targetChar then return false end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+	if not root or not targetRoot then return false end
+	if (targetRoot.Position - root.Position).Magnitude > 10 then return false end
+	local Steal = require(script.Parent.Steal)
+	if Steal.isCarrying(targetPlayer) then Steal.dropCarried(targetPlayer) end
+	local away = targetRoot.Position - root.Position
+	away = Vector3.new(away.X, 0, away.Z)
+	if away.Magnitude < 1 then away = Vector3.new(0, 0, 1) end
+	targetRoot.CFrame = targetRoot.CFrame + away.Unit * 12 + Vector3.new(0, 3, 0)
+	targetPlayer:SetAttribute("BannerText", "SLAPPED by " .. player.Name .. "!")
+	targetPlayer:SetAttribute("BannerUntil", os.time() + 3)
 	return true
 end
 
-function Slap.giveSlapTool(player)
-	local function onCharacter(character)
-		local tool = Instance.new("Tool")
-		tool.Name = "Slap"
-		tool.RequiresHandle = true
-		tool.CanBeDropped = false
-		local handle = Instance.new("Part")
-		handle.Name = "Handle"
-		handle.Size = Vector3.new(1, 0.4, 2.5)
-		handle.Color = Color3.fromRGB(255, 220, 100)
-		handle.Material = Enum.Material.SmoothPlastic
-		handle.Parent = tool
-		tool.Parent = player:WaitForChild("Backpack")
-		tool.Activated:Connect(function()
-			local nearest = nil
-			local nearestDistance = 14
-			local root = character:FindFirstChild("HumanoidRootPart")
-			if not root then
-				return
-			end
-			for _, other in ipairs(Players:GetPlayers()) do
-				if other ~= player then
-					local otherRoot = other.Character and other.Character:FindFirstChild("HumanoidRootPart")
-					if otherRoot then
-						local d = (otherRoot.Position - root.Position).Magnitude
-						if d < nearestDistance then
-							nearestDistance = d
-							nearest = other
-						end
+function Slap.giveTool(player)
+	local character = player.Character
+	if not character then return end
+	if character:FindFirstChild("Slap") then return end
+	local tool = Instance.new("Tool")
+	tool.Name = "Slap"
+	tool.RequiresHandle = false
+	tool.CanBeDropped = false
+	tool.Parent = character
+	tool.Activated:Connect(function()
+		local nearest = nil
+		local nearestDist = 10
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if not root then return end
+		for _, other in ipairs(Players:GetPlayers()) do
+			if other ~= player and other.Character then
+				local otherRoot = other.Character:FindFirstChild("HumanoidRootPart")
+				if otherRoot then
+					local dist = (otherRoot.Position - root.Position).Magnitude
+					if dist < nearestDist then
+						nearestDist = dist
+						nearest = other
 					end
 				end
 			end
-			if nearest then
-				Slap.slapPlayer(player, nearest)
-			end
-		end)
-	end
-	player.CharacterAdded:Connect(onCharacter)
-	if player.Character then
-		onCharacter(player.Character)
-	end
-end
-
-function Slap.start()
-	Players.PlayerAdded:Connect(function(player)
-		Slap.giveSlapTool(player)
+		end
+		if nearest then Slap.slapPlayer(player, nearest) end
 	end)
-	for _, player in ipairs(Players:GetPlayers()) do
-		Slap.giveSlapTool(player)
-	end
 end
 
 return Slap
