@@ -185,7 +185,8 @@ local function buildGui()
 	labels.lock = makeButton(gui, "LockButton", "LOCK BASE (60s)", UDim2.new(1, -330, 1, -130), UDim2.new(0, 320, 0, 56), Color3.fromRGB(200, 60, 60))
 	labels.rebirth = makeButton(gui, "RebirthButton", "REBIRTH $10000  x1.25", UDim2.new(1, -330, 1, -66), UDim2.new(0, 320, 0, 56), Color3.fromRGB(150, 80, 220))
 
-	labels.hint = makeLabel(gui, "Hint", "Click a brainrot on the belt to BUY it - steal rivals when their lock is OFF", UDim2.new(0, 12, 1, -44), UDim2.new(0, 440, 0, 34), 20)
+	labels.hint = makeLabel(gui, "Hint", "Click a brainrot on the belt to BUY it", UDim2.new(0, 12, 1, -44), UDim2.new(0, 440, 0, 34), 20)
+	labels.hint.TextWrapped = true
 	labels.hint.BackgroundTransparency = 0.55
 
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
