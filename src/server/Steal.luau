@@ -118,6 +118,13 @@ function Steal.attachCarried(player, model)
 		return false
 	end
 	model:SetAttribute("State", "Carried")
+	local gui = model:FindFirstChild("BrainrotLabel")
+	if gui then
+		local rateLabel = gui:FindFirstChild("RateLabel")
+		if rateLabel then
+			rateLabel.Text = "$" .. (model:GetAttribute("Rate") or 0) .. "/s  •  STOLEN!"
+		end
+	end
 	for _, part in ipairs(model:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.Anchored = false
@@ -162,6 +169,13 @@ function Steal.dropCarried(player)
 		end
 	end
 	model:SetAttribute("State", "Dropped")
+	local gui = model:FindFirstChild("BrainrotLabel")
+	if gui then
+		local rateLabel = gui:FindFirstChild("RateLabel")
+		if rateLabel then
+			rateLabel.Text = "$" .. (model:GetAttribute("Rate") or 0) .. "/s  •  DROPPED — CLICK TO GRAB"
+		end
+	end
 	model:PivotTo(CFrame.new(dropPos))
 	model.Parent = workspace:FindFirstChild("DroppedBrainrots") or workspace
 	return true

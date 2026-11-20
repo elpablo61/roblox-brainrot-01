@@ -52,6 +52,13 @@ function Economy.buyBrainrot(player, model)
 	table.insert(data.Owned, model)
 	model:SetAttribute("State", "Owned")
 	model:SetAttribute("Owner", player.Name)
+	local gui = model:FindFirstChild("BrainrotLabel")
+	if gui then
+		local rateLabel = gui:FindFirstChild("RateLabel")
+		if rateLabel then
+			rateLabel.Text = "$" .. rate .. "/s  •  YOURS"
+		end
+	end
 	local slot = #data.Owned
 	model:PivotTo(CFrame.new(Economy.getSlotPosition(data.BaseId, slot)))
 	local baseFolder = workspace:WaitForChild("Bases"):WaitForChild("Base" .. data.BaseId)
@@ -212,6 +219,13 @@ function Economy.registerOwned(player, model)
 	table.insert(data.Owned, model)
 	model:SetAttribute("State", "Owned")
 	model:SetAttribute("Owner", player.Name)
+	local gui = model:FindFirstChild("BrainrotLabel")
+	if gui then
+		local rateLabel = gui:FindFirstChild("RateLabel")
+		if rateLabel then
+			rateLabel.Text = "$" .. (model:GetAttribute("Rate") or 0) .. "/s  •  YOURS"
+		end
+	end
 	local slot = #data.Owned
 	model:PivotTo(CFrame.new(Economy.getSlotPosition(data.BaseId, slot)))
 	local baseFolder = workspace:WaitForChild("Bases"):WaitForChild("Base" .. data.BaseId)
