@@ -1,227 +1,324 @@
--- Economy: owns every player's coins, owned brainrots, rebirths and income.
--- State lives here alone; the HUD only reads the player attributes this
--- module refreshes. First function is the buy, the core of the loop.
+-- Brainrot Blitz economy: coins, buying, income ticking, bases, leaderstats.
+-- One table per player holds coins, rebirths, owned brainrots and base id.
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Config = require(ReplicatedStorage.Shared.Config)
 
 local Economy = {}
-local states = {}
 
-local function getGameState()
+Economy.BasePositions = {
+	Vector3.new(70, 0, 95),
+	Vector3.new(-70, 0, 95),
+	Vector3.new(70, 0, -95),
+	Vector3.new(-70, 0, -95),
+	Vector3.new(100, 0, 0),
+	Vector3.new(-100, 0, 0),
+	Vector3.new(0, 0, 95),
+	Vector3.new(0, 0, -95),
+}
+
+local Data = {}
+local TakenBases = {}
+local StealModule = nil
+
+local function getNotify()
+	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
+end
+
+local function getState()
 	return ReplicatedStorage:WaitForChild("GameState")
 end
 
-local function eventMultiplier()
-	local gs = getGameState()
-	local mult = 1
-	if gs:GetAttribute("GoldenLeft") and gs:GetAttribute("GoldenLeft") > 0 then
-		mult *= 2
-	end
-	if gs:GetAttribute("MythicLeft") and gs:GetAttribute("MythicLeft") > 0 then
-		mult *= 2
-	end
-	return mult
-end
-
-function Economy.getEventMultiplier()
-	return eventMultiplier()
-end
-
-function Economy.getState(player)
-	return states[player]
-end
-
-function Economy.getIncome(player)
-	local state = states[player]
-	if not state then
-		return 0
-	end
-	local base = 0
-	for _, owned in ipairs(state.owned) do
-		base += owned.rate
-	end
-	return math.floor(base * (1 + Config.REBIRTH_MULT * state.rebirths) * eventMultiplier())
-end
-
-function Economy.refreshAttributes(player)
-	local state = states[player]
-	if not state then
-		return
-	end
-	local ownedNames = {}
-	for _, owned in ipairs(state.owned) do
-		ownedNames[owned.name] = true
-	end
-	local index = 0
-	for _ in pairs(ownedNames) do
-		index += 1
-	end
-	player:SetAttribute("Coins", math.floor(state.coins))
-	player:SetAttribute("Income", Economy.getIncome(player))
-	player:SetAttribute("Rebirths", state.rebirths)
-	player:SetAttribute("OwnedCount", #state.owned)
-	player:SetAttribute("Slots", Config.BASE_SLOTS + Config.SLOTS_PER_REBIRTH * state.rebirths)
-	player:SetAttribute("Multiplier", 1 + Config.REBIRTH_MULT * state.rebirths)
-	player:SetAttribute("IndexCount", index)
-	player:SetAttribute("BaseIndex", state.baseIndex or 0)
+function Economy.setSteal(module)
+	StealModule = module
 end
 
 function Economy.buyBrainrot(player, model)
-	local state = states[player]
-	if not state or not model or not model.Parent then
+	if not model or not model.Parent then
 		return false
 	end
-	local ownerId = model:GetAttribute("OwnerId")
-	if ownerId and ownerId ~= 0 and ownerId ~= player.UserId then
-		local Steal = require(script.Parent:WaitForChild("Steal"))
-		return Steal.attemptSteal(player, model)
+	if model:GetAttribute("State") ~= "Belt" then
+		return false
 	end
-	if ownerId == player.UserId then
+	local data = Data[player]
+	if not data then
 		return false
 	end
 	local price = model:GetAttribute("Price") or 0
 	local rate = model:GetAttribute("Rate") or 0
-	local charName = model:GetAttribute("CharName") or "Brainrot"
-	if state.coins < price then
+	if data.Coins < price then
+		getNotify():FireClient(player, "Deny", "Need $" .. price .. " — you have $" .. data.Coins)
 		return false
 	end
-	if #state.owned >= Config.BASE_SLOTS + Config.SLOTS_PER_REBIRTH * state.rebirths then
+	if #data.Owned >= Economy.getMaxSlots(player) then
+		getNotify():FireClient(player, "Deny", "Base full! REBIRTH for +2 slots")
 		return false
 	end
-	state.coins -= price
-	local slot = #state.owned + 1
-	table.insert(state.owned, { model = model, name = charName, rate = rate })
-	model:SetAttribute("OwnerId", player.UserId)
-	model:SetAttribute("OriginalPrice", price)
-	local bases = workspace:WaitForChild("Bases")
-	local base = bases:FindFirstChild("Base" .. state.baseIndex)
-	if base then
-		model.Parent = base
-		local spot = base:FindFirstChild("Slot" .. slot)
-		local target = spot and spot.Position or (base:GetAttribute("Center") and Vector3.new(base:GetAttribute("Center").X, 2, base:GetAttribute("Center").Z) or Vector3.new(0, 2, 0))
-		model:PivotTo(CFrame.new(target + Vector3.new(0, 1.3, 0)))
-		for _, part in ipairs(model:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.Anchored = true
-			end
-		end
+	data.Coins -= price
+	data.OwnedNames[model:GetAttribute("CharName")] = true
+	table.insert(data.Owned, model)
+	model:SetAttribute("State", "Owned")
+	model:SetAttribute("Owner", player.Name)
+	local slot = #data.Owned
+	model:PivotTo(CFrame.new(Economy.getSlotPosition(data.BaseId, slot)))
+	local baseFolder = workspace:WaitForChild("Bases"):WaitForChild("Base" .. data.BaseId)
+	model.Parent = baseFolder:WaitForChild("Brainrots")
+	if StealModule then
+		StealModule.wireOwned(model)
 	end
-	Economy.refreshAttributes(player)
-	local remotes = ReplicatedStorage:WaitForChild("BrainrotRemotes")
-	remotes:WaitForChild("Banner"):FireClient(player, "BOUGHT " .. charName .. " for $" .. price .. "!", "green", 3)
+	Economy.refreshPlayer(player)
+	getNotify():FireClient(player, "Buy", model:GetAttribute("CharName"), rate, model:GetAttribute("Price"))
+	getNotify():FireAllClients("BoughtBanner", player.Name, model:GetAttribute("CharName"))
 	return true
 end
 
 function Economy.collectIncome(player)
-	local state = states[player]
-	if not state then
-		return
+	local data = Data[player]
+	if not data then
+		return 0
 	end
-	local income = Economy.getIncome(player)
-	if income > 0 then
-		state.coins += income
+	local rate = Economy.getRate(player)
+	if rate > 0 then
+		data.Coins += rate
+		local basePos = Economy.BasePositions[data.BaseId]
+		getNotify():FireClient(player, "Income", rate, basePos)
 	end
-	Economy.refreshAttributes(player)
+	Economy.refreshPlayer(player)
+	return rate
 end
 
-function Economy.removeOwned(player, model)
-	local state = states[player]
-	if not state then
-		return
+function Economy.getRate(player)
+	local data = Data[player]
+	if not data then
+		return 0
 	end
-	for i, owned in ipairs(state.owned) do
-		if owned.model == model then
-			table.remove(state.owned, i)
-			break
+	local total = 0
+	for _, model in ipairs(data.Owned) do
+		if model.Parent then
+			total += model:GetAttribute("Rate") or 0
 		end
 	end
-	Economy.refreshAttributes(player)
+	local multiplier = 1
+	multiplier *= (Config.Rebirth.Multiplier ^ data.Rebirths)
+	local state = getState()
+	if state:GetAttribute("GoldenActive") then
+		multiplier *= 2
+	end
+	if state:GetAttribute("MythicActive") then
+		multiplier *= 2
+	end
+	return math.floor(total * multiplier + 0.5)
 end
 
-function Economy.addOwned(player, model, charName, rate)
-	local state = states[player]
-	if not state then
+function Economy.getMaxSlots(player)
+	local data = Data[player]
+	if not data then
+		return Config.BaseSlots
+	end
+	return Config.BaseSlots + data.Rebirths * Config.Rebirth.SlotsPerRebirth
+end
+
+function Economy.getSlotPosition(baseId, slotIndex)
+	local center = Economy.BasePositions[baseId]
+	local col = (slotIndex - 1) % 4
+	local row = math.floor((slotIndex - 1) / 4)
+	local x = center.X + (col - 1.5) * 5
+	local z = center.Z + (row - 1) * 5
+	return Vector3.new(x, 2, z)
+end
+
+function Economy.getCoins(player)
+	local data = Data[player]
+	if data then
+		return data.Coins
+	end
+	return 0
+end
+
+function Economy.addCoins(player, amount)
+	local data = Data[player]
+	if data then
+		data.Coins = math.max(0, data.Coins + amount)
+		Economy.refreshPlayer(player)
+	end
+end
+
+function Economy.setCoins(player, amount)
+	local data = Data[player]
+	if data then
+		data.Coins = math.max(0, amount)
+		Economy.refreshPlayer(player)
+	end
+end
+
+function Economy.getRebirths(player)
+	local data = Data[player]
+	if data then
+		return data.Rebirths
+	end
+	return 0
+end
+
+function Economy.addRebirth(player)
+	local data = Data[player]
+	if data then
+		data.Rebirths += 1
+		Economy.refreshPlayer(player)
+	end
+end
+
+function Economy.getBaseId(player)
+	local data = Data[player]
+	if data then
+		return data.BaseId
+	end
+	return 0
+end
+
+function Economy.getOwned(player)
+	local data = Data[player]
+	if data then
+		return data.Owned
+	end
+	return {}
+end
+
+function Economy.getIndexCount(player)
+	local data = Data[player]
+	if not data then
+		return 0
+	end
+	local count = 0
+	for _ in pairs(data.OwnedNames) do
+		count += 1
+	end
+	return count
+end
+
+function Economy.registerOwned(player, model)
+	local data = Data[player]
+	if not data then
 		return false
 	end
-	if #state.owned >= Config.BASE_SLOTS + Config.SLOTS_PER_REBIRTH * state.rebirths then
+	if #data.Owned >= Economy.getMaxSlots(player) then
 		return false
 	end
-	table.insert(state.owned, { model = model, name = charName, rate = rate })
-	Economy.refreshAttributes(player)
+	data.OwnedNames[model:GetAttribute("CharName")] = true
+	table.insert(data.Owned, model)
+	model:SetAttribute("State", "Owned")
+	model:SetAttribute("Owner", player.Name)
+	local slot = #data.Owned
+	model:PivotTo(CFrame.new(Economy.getSlotPosition(data.BaseId, slot)))
+	local baseFolder = workspace:WaitForChild("Bases"):WaitForChild("Base" .. data.BaseId)
+	model.Parent = baseFolder:WaitForChild("Brainrots")
+	if StealModule then
+		StealModule.wireOwned(model)
+	end
+	Economy.refreshPlayer(player)
 	return true
 end
 
-function Economy.deductCoins(player, amount)
-	local state = states[player]
-	if not state then
-		return 0
+function Economy.removeOwned(player, model)
+	local data = Data[player]
+	if not data then
+		return
 	end
-	local taken = math.min(state.coins, amount)
-	state.coins -= taken
-	Economy.refreshAttributes(player)
-	return taken
-end
-
-function Economy.setupPlayer(player)
-	states[player] = {
-		coins = Config.START_COINS,
-		owned = {},
-		rebirths = 0,
-		baseIndex = 0,
-		joinedAt = os.clock(),
-	}
-	-- Assign the first free base plot.
-	local bases = workspace:WaitForChild("Bases")
-	for i = 1, 8 do
-		local base = bases:FindFirstChild("Base" .. i)
-		if base and (base:GetAttribute("OwnerId") or 0) == 0 then
-			base:SetAttribute("OwnerId", player.UserId)
-			states[player].baseIndex = i
+	for i, owned in ipairs(data.Owned) do
+		if owned == model then
+			table.remove(data.Owned, i)
 			break
 		end
 	end
-	Economy.refreshAttributes(player)
-	player:SetAttribute("LockLeft", 0)
-	player:SetAttribute("LockCooldown", 0)
-	player:SetAttribute("SpawnProtect", Config.SPAWN_PROTECTION)
+	Economy.refreshPlayer(player)
 end
 
-function Economy.removePlayer(player)
-	local state = states[player]
-	if state and state.baseIndex > 0 then
-		local bases = workspace:FindFirstChild("Bases")
-		if bases then
-			local base = bases:FindFirstChild("Base" .. state.baseIndex)
-			if base then
-				base:SetAttribute("OwnerId", 0)
-			end
+function Economy.refreshPlayer(player)
+	local data = Data[player]
+	if not data then
+		return
+	end
+	local rate = Economy.getRate(player)
+	player:SetAttribute("Coins", data.Coins)
+	player:SetAttribute("Income", rate)
+	player:SetAttribute("Rebirths", data.Rebirths)
+	player:SetAttribute("SlotsUsed", #data.Owned)
+	player:SetAttribute("SlotsMax", Economy.getMaxSlots(player))
+	player:SetAttribute("IndexCount", Economy.getIndexCount(player))
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if leaderstats then
+		local coins = leaderstats:FindFirstChild("Coins")
+		if coins then
+			coins.Value = data.Coins
+		end
+		local income = leaderstats:FindFirstChild("Income")
+		if income then
+			income.Value = rate
 		end
 	end
-	states[player] = nil
+	local list = {}
+	for _, model in ipairs(data.Owned) do
+		if model.Parent then
+			table.insert(list, { Name = model:GetAttribute("CharName"), Rate = model:GetAttribute("Rate") })
+		end
+	end
+	getNotify():FireClient(player, "BaseList", list)
+end
+
+function Economy.assignBase(player)
+	for i = 1, Config.MaxPlayers do
+		if not TakenBases[i] then
+			TakenBases[i] = player
+			return i
+		end
+	end
+	return 1
+end
+
+function Economy.freeBase(player)
+	local data = Data[player]
+	if data and TakenBases[data.BaseId] == player then
+		TakenBases[data.BaseId] = nil
+	end
+end
+
+function Economy.onPlayerAdded(player)
+	local baseId = Economy.assignBase(player)
+	Data[player] = {
+		Coins = Config.StartingCash,
+		Rebirths = 0,
+		Owned = {},
+		OwnedNames = {},
+		BaseId = baseId,
+	}
+	player:SetAttribute("BaseId", baseId)
+	player:SetAttribute("SpawnProtectedUntil", os.clock() + Config.Lock.SpawnProtection)
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	local coins = Instance.new("IntValue")
+	coins.Name = "Coins"
+	coins.Value = Config.StartingCash
+	coins.Parent = leaderstats
+	local income = Instance.new("IntValue")
+	income.Name = "Income"
+	income.Value = 0
+	income.Parent = leaderstats
+	leaderstats.Parent = player
+	Economy.refreshPlayer(player)
+end
+
+function Economy.onPlayerRemoving(player)
+	Economy.freeBase(player)
+	Data[player] = nil
 end
 
 function Economy.start()
-	Players.PlayerAdded:Connect(function(player)
-		Economy.setupPlayer(player)
-	end)
-	Players.PlayerRemoving:Connect(function(player)
-		Economy.removePlayer(player)
-	end)
-	for _, player in ipairs(Players:GetPlayers()) do
-		Economy.setupPlayer(player)
-	end
 	task.spawn(function()
 		while true do
 			task.wait(1)
 			for _, player in ipairs(Players:GetPlayers()) do
 				Economy.collectIncome(player)
-				local protect = player:GetAttribute("SpawnProtect") or 0
-				if protect > 0 then
-					player:SetAttribute("SpawnProtect", protect - 1)
-				end
 			end
 		end
 	end)

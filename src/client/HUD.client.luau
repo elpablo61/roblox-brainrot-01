@@ -1,255 +1,289 @@
--- Brainrot Blitz HUD: coins, earnings, wave timer, base panel, collection
--- index, lock and rebirth buttons, event banner and hint. All text stays
--- clear of the top-left corner where Roblox puts its menu buttons.
+-- Brainrot Blitz HUD: coins, EARNING $/s, wave timer, base panel, index
+-- panel, lock and rebirth buttons, and every banner. All text stays clear
+-- of the top-left corner, where Roblox puts its menu buttons.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-local remotes = ReplicatedStorage:WaitForChild("BrainrotRemotes")
-local gameState = ReplicatedStorage:WaitForChild("GameState")
-
 local HUD = {}
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "BrainrotHUD"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = false
-gui.Parent = playerGui
+local CoinsLabel
+local EarningLabel
+local WaveLabel
+local LockButton
+local RebirthButton
+local BaseList
+local SlotsLabel
+local IndexLabel
+local BannerLabel
+local BoostLabel
+local ToastLabel
+local OwnedList = {}
+local BannerUntil = 0
 
-local function makeLabel(name, parent, pos, size, textSize, color)
+local function formatTime(seconds)
+	seconds = math.max(0, math.floor(seconds + 0.5))
+	local minutes = math.floor(seconds / 60)
+	local rest = seconds % 60
+	return string.format("%02d:%02d", minutes, rest)
+end
+
+function HUD.refreshStats()
+	local coins = player:GetAttribute("Coins") or 150
+	local income = player:GetAttribute("Income") or 0
+	local rebirths = player:GetAttribute("Rebirths") or 0
+	local slotsUsed = player:GetAttribute("SlotsUsed") or 0
+	local slotsMax = player:GetAttribute("SlotsMax") or 8
+	local indexCount = player:GetAttribute("IndexCount") or 0
+	local lockSeconds = player:GetAttribute("LockSeconds") or 0
+	local lockCooldown = player:GetAttribute("LockCooldown") or 0
+	CoinsLabel.Text = "$" .. coins
+	EarningLabel.Text = "EARNING $" .. income .. "/s"
+	local state = ReplicatedStorage:FindFirstChild("GameState")
+	local waveTimer = state and state:GetAttribute("WaveTimer") or 120
+	WaveLabel.Text = "NEXT WAVE " .. formatTime(waveTimer)
+	SlotsLabel.Text = "SLOTS " .. slotsUsed .. "/" .. slotsMax
+	local percent = math.floor(indexCount / 16 * 100 + 0.5)
+	IndexLabel.Text = "INDEX " .. indexCount .. "/16  •  " .. percent .. "%"
+	if lockSeconds > 0 then
+		LockButton.Text = "LOCKED " .. lockSeconds .. "s"
+		LockButton.BackgroundColor3 = Color3.fromRGB(40, 180, 80)
+	else
+		if lockCooldown > 0 then
+			LockButton.Text = "LOCK (" .. lockCooldown .. "s)"
+		else
+			LockButton.Text = "LOCK BASE (60s)"
+		end
+		LockButton.BackgroundColor3 = Color3.fromRGB(40, 120, 220)
+	end
+	if rebirths > 0 then
+		RebirthButton.Text = "REBIRTH $" .. 10000 .. "  •  x" .. (1 + rebirths * 0.25)
+	else
+		RebirthButton.Text = "REBIRTH $10,000  •  x1.25"
+	end
+	local boost = state and (state:GetAttribute("GoldenActive") or state:GetAttribute("MythicActive"))
+	BoostLabel.Visible = boost == true
+	if boost then
+		BoostLabel.Text = "2x INCOME ACTIVE!"
+	end
+	HUD.refreshBaseList()
+end
+
+function HUD.refreshBaseList()
+	for _, child in ipairs(BaseList:GetChildren()) do
+		if child:IsA("TextLabel") then
+			child:Destroy()
+		end
+	end
+	if #OwnedList == 0 then
+		local empty = Instance.new("TextLabel")
+		empty.Size = UDim2.new(1, 0, 0, 26)
+		empty.BackgroundTransparency = 1
+		empty.Text = "No brainrots yet — buy one!"
+		empty.TextColor3 = Color3.fromRGB(220, 220, 220)
+		empty.TextSize = 20
+		empty.Font = Enum.Font.Gotham
+		empty.Parent = BaseList
+		return
+	end
+	for _, entry in ipairs(OwnedList) do
+		local row = Instance.new("TextLabel")
+		row.Size = UDim2.new(1, 0, 0, 26)
+		row.BackgroundTransparency = 1
+		row.Text = entry.Name .. "  $" .. entry.Rate .. "/s"
+		row.TextColor3 = Color3.fromRGB(255, 255, 255)
+		row.TextSize = 20
+		row.Font = Enum.Font.Gotham
+		row.TextXAlignment = Enum.TextXAlignment.Left
+		row.Parent = BaseList
+	end
+end
+
+function HUD.showBanner(text, color, seconds)
+	BannerLabel.Text = text
+	BannerLabel.BackgroundColor3 = color
+	BannerLabel.Visible = true
+	BannerUntil = os.clock() + (seconds or 4)
+end
+
+function HUD.showToast(text, color)
+	ToastLabel.Text = text
+	ToastLabel.TextColor3 = color or Color3.fromRGB(255, 255, 255)
+	ToastLabel.Visible = true
+	task.delay(3, function()
+		ToastLabel.Visible = false
+	end)
+end
+
+local function makeLabel(parent, name, text, size, position, textSize, color)
 	local label = Instance.new("TextLabel")
 	label.Name = name
-	label.Position = pos
 	label.Size = size
-	label.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	label.BackgroundTransparency = 0.4
+	label.Position = position
+	label.BackgroundTransparency = 1
+	label.Text = text
 	label.TextColor3 = color or Color3.fromRGB(255, 255, 255)
-	label.TextSize = textSize
-	label.Font = Enum.Font.SourceSansBold
 	label.TextStrokeTransparency = 0
-	label.Text = ""
+	label.TextSize = textSize
+	label.Font = Enum.Font.GothamBold
 	label.Parent = parent
 	return label
 end
 
--- Top-centre: persistent wave timer (never top-left).
-local waveLabel = makeLabel("WaveTimer", gui, UDim2.new(0.5, -140, 0, 8), UDim2.fromOffset(280, 44), 28)
-waveLabel.Text = "NEXT WAVE 02:00"
-
--- Top-right: coins + earnings.
-local coinsLabel = makeLabel("Coins", gui, UDim2.new(1, -300, 0, 8), UDim2.fromOffset(288, 44), 30, Color3.fromRGB(255, 220, 0))
-coinsLabel.Text = "COINS $150"
-local incomeLabel = makeLabel("Income", gui, UDim2.new(1, -300, 0, 56), UDim2.fromOffset(288, 36), 26, Color3.fromRGB(120, 255, 120))
-incomeLabel.Text = "EARNING $0/s"
-
--- Event banner: narrow (360px) so it never overlaps the income label.
-local bannerLabel = makeLabel("EventBanner", gui, UDim2.new(0.5, -180, 0, 60), UDim2.fromOffset(360, 40), 26, Color3.fromRGB(255, 215, 0))
-bannerLabel.Visible = false
-
--- Left panel: your base, slots, owned brainrots and their rates.
-local basePanel = Instance.new("Frame")
-basePanel.Name = "BasePanel"
-basePanel.Position = UDim2.new(0, 12, 0, 120)
-basePanel.Size = UDim2.fromOffset(250, 260)
-basePanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-basePanel.BackgroundTransparency = 0.4
-basePanel.Parent = gui
-local baseTitle = makeLabel("BaseTitle", basePanel, UDim2.new(0, 8, 0, 6), UDim2.fromOffset(234, 30), 22)
-baseTitle.Text = "MY BASE"
-local slotsLabel = makeLabel("Slots", basePanel, UDim2.new(0, 8, 0, 40), UDim2.fromOffset(234, 28), 22)
-slotsLabel.Text = "SLOTS 0/8"
-local indexLabel = makeLabel("Index", basePanel, UDim2.new(0, 8, 0, 72), UDim2.fromOffset(234, 28), 22, Color3.fromRGB(255, 200, 0))
-indexLabel.Text = "INDEX 0/16"
-local ownedLabel = makeLabel("Owned", basePanel, UDim2.new(0, 8, 0, 104), UDim2.fromOffset(234, 148), 20)
-ownedLabel.TextWrapped = true
-ownedLabel.TextXAlignment = Enum.TextXAlignment.Left
-ownedLabel.TextYAlignment = Enum.TextYAlignment.Top
-ownedLabel.Text = "No brainrots yet - buy one on the belt!"
-
--- Bottom-right: lock and rebirth buttons.
-local lockButton = Instance.new("TextButton")
-lockButton.Name = "LockButton"
-lockButton.AnchorPoint = Vector2.new(1, 1)
-lockButton.Position = UDim2.new(1, -12, 1, -64)
-lockButton.Size = UDim2.fromOffset(200, 48)
-lockButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-lockButton.TextSize = 24
-lockButton.Font = Enum.Font.SourceSansBold
-lockButton.Text = "LOCK BASE (60s)"
-lockButton.Parent = gui
-
-local rebirthButton = Instance.new("TextButton")
-rebirthButton.Name = "RebirthButton"
-rebirthButton.AnchorPoint = Vector2.new(1, 1)
-rebirthButton.Position = UDim2.new(1, -12, 1, -8)
-rebirthButton.Size = UDim2.fromOffset(200, 48)
-rebirthButton.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
-rebirthButton.TextColor3 = Color3.fromRGB(0, 0, 0)
-rebirthButton.TextSize = 24
-rebirthButton.Font = Enum.Font.SourceSansBold
-rebirthButton.Text = "REBIRTH $10,000"
-rebirthButton.Parent = gui
-
--- Bottom-left: short hint, wrapped so it never runs under the buttons.
-local hintLabel = makeLabel("Hint", gui, UDim2.new(0, 12, 1, -44), UDim2.fromOffset(420, 36), 20)
-hintLabel.TextWrapped = true
-hintLabel.Text = "Click a brainrot on the belt to BUY it"
-
-local bannerThread = nil
-
-local function showBanner(text, colorName, duration)
-	local colors = {
-		blue = Color3.fromRGB(120, 200, 255),
-		gold = Color3.fromRGB(255, 215, 0),
-		green = Color3.fromRGB(120, 255, 120),
-		red = Color3.fromRGB(255, 90, 90),
-	}
-	bannerLabel.Text = text
-	bannerLabel.TextColor3 = colors[colorName] or Color3.fromRGB(255, 255, 255)
-	bannerLabel.Visible = true
-	-- task.delay returns a thread, not a connection: cancel it, never Disconnect it.
-	if bannerThread then
-		task.cancel(bannerThread)
-	end
-	bannerThread = task.delay(duration or 4, function()
-		bannerLabel.Visible = false
-		bannerThread = nil
+local function buildGui()
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "BrainrotHUD"
+	gui.IgnoreGuiInset = true
+	gui.ResetOnSpawn = false
+	gui.Parent = player:WaitForChild("PlayerGui")
+	WaveLabel = makeLabel(gui, "WaveTimer", "NEXT WAVE 02:00", UDim2.new(0, 300, 0, 44),
+		UDim2.new(0.5, -150, 0, 8), 30, Color3.fromRGB(120, 200, 255))
+	WaveLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	WaveLabel.BackgroundTransparency = 0.4
+	CoinsLabel = makeLabel(gui, "Coins", "$150", UDim2.new(0, 220, 0, 44),
+		UDim2.new(1, -240, 0, 8), 32, Color3.fromRGB(255, 230, 0))
+	CoinsLabel.TextXAlignment = Enum.TextXAlignment.Right
+	EarningLabel = makeLabel(gui, "Earning", "EARNING $0/s", UDim2.new(0, 260, 0, 40),
+		UDim2.new(1, -280, 0, 54), 30, Color3.fromRGB(80, 255, 120))
+	EarningLabel.TextXAlignment = Enum.TextXAlignment.Right
+	BoostLabel = makeLabel(gui, "Boost", "2x INCOME ACTIVE!", UDim2.new(0, 300, 0, 32),
+		UDim2.new(0.5, -150, 0, 56), 24, Color3.fromRGB(255, 215, 0))
+	BoostLabel.Visible = false
+	BannerLabel = Instance.new("TextLabel")
+	BannerLabel.Name = "Banner"
+	BannerLabel.Size = UDim2.new(0, 640, 0, 52)
+	BannerLabel.Position = UDim2.new(0.5, -320, 0, 96)
+	BannerLabel.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+	BannerLabel.BackgroundTransparency = 0.15
+	BannerLabel.Text = ""
+	BannerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	BannerLabel.TextStrokeTransparency = 0
+	BannerLabel.TextSize = 32
+	BannerLabel.Font = Enum.Font.GothamBold
+	BannerLabel.Visible = false
+	BannerLabel.Parent = gui
+	ToastLabel = makeLabel(gui, "Toast", "", UDim2.new(0, 600, 0, 34),
+		UDim2.new(0.5, -300, 0, 156), 24, Color3.fromRGB(255, 255, 255))
+	ToastLabel.Visible = false
+	local basePanel = Instance.new("Frame")
+	basePanel.Name = "BasePanel"
+	basePanel.Size = UDim2.new(0, 300, 0, 330)
+	basePanel.Position = UDim2.new(1, -320, 0, 110)
+	basePanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	basePanel.BackgroundTransparency = 0.35
+	basePanel.Parent = gui
+	local title = makeLabel(basePanel, "Title", "MY BASE", UDim2.new(1, 0, 0, 36),
+		UDim2.new(0, 0, 0, 4), 28, Color3.fromRGB(255, 255, 255))
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	SlotsLabel = makeLabel(basePanel, "Slots", "SLOTS 0/8", UDim2.new(1, 0, 0, 28),
+		UDim2.new(0, 0, 0, 40), 22, Color3.fromRGB(255, 230, 0))
+	SlotsLabel.TextXAlignment = Enum.TextXAlignment.Left
+	IndexLabel = makeLabel(basePanel, "Index", "INDEX 0/16  •  0%", UDim2.new(1, 0, 0, 28),
+		UDim2.new(0, 0, 0, 68), 22, Color3.fromRGB(120, 200, 255))
+	IndexLabel.TextXAlignment = Enum.TextXAlignment.Left
+	BaseList = Instance.new("Frame")
+	BaseList.Name = "BaseList"
+	BaseList.Size = UDim2.new(1, -8, 0, 220)
+	BaseList.Position = UDim2.new(0, 4, 0, 100)
+	BaseList.BackgroundTransparency = 1
+	BaseList.Parent = basePanel
+	local hint = makeLabel(gui, "Hint", "Click a brainrot on the RED conveyor to BUY it!",
+		UDim2.new(0, 560, 0, 30), UDim2.new(0, 20, 1, -110), 20, Color3.fromRGB(255, 255, 255))
+	hint.TextXAlignment = Enum.TextXAlignment.Left
+	local hint2 = makeLabel(gui, "Hint2", "STEAL rivals, LOCK your base, SURVIVE the tsunami!",
+		UDim2.new(0, 560, 0, 30), UDim2.new(0, 20, 1, -80), 20, Color3.fromRGB(255, 230, 0))
+	hint2.TextXAlignment = Enum.TextXAlignment.Left
+	LockButton = Instance.new("TextButton")
+	LockButton.Name = "LockButton"
+	LockButton.Size = UDim2.new(0, 220, 0, 52)
+	LockButton.Position = UDim2.new(0.5, -240, 1, -64)
+	LockButton.BackgroundColor3 = Color3.fromRGB(40, 120, 220)
+	LockButton.Text = "LOCK BASE (60s)"
+	LockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	LockButton.TextSize = 24
+	LockButton.Font = Enum.Font.GothamBold
+	LockButton.Parent = gui
+	RebirthButton = Instance.new("TextButton")
+	RebirthButton.Name = "RebirthButton"
+	RebirthButton.Size = UDim2.new(0, 260, 0, 52)
+	RebirthButton.Position = UDim2.new(0.5, 10, 1, -64)
+	RebirthButton.BackgroundColor3 = Color3.fromRGB(170, 80, 255)
+	RebirthButton.Text = "REBIRTH $10,000  •  x1.25"
+	RebirthButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	RebirthButton.TextSize = 24
+	RebirthButton.Font = Enum.Font.GothamBold
+	RebirthButton.Parent = gui
+	local remotes = ReplicatedStorage:WaitForChild("Remotes")
+	LockButton.MouseButton1Click:Connect(function()
+		remotes.LockRequest:FireServer()
+	end)
+	RebirthButton.MouseButton1Click:Connect(function()
+		remotes.RebirthRequest:FireServer()
 	end)
 end
 
-remotes:WaitForChild("Banner").OnClientEvent:Connect(showBanner)
-
-local function fmtTime(seconds)
-	seconds = math.max(0, math.floor(seconds or 0))
-	local mins = math.floor(seconds / 60)
-	local secs = seconds % 60
-	return string.format("%02d:%02d", mins, secs)
-end
-
-local function listOwned()
-	local baseIndex = player:GetAttribute("BaseIndex") or 0
-	if baseIndex == 0 then
-		return {}
-	end
-	local bases = workspace:FindFirstChild("Bases")
-	if not bases then
-		return {}
-	end
-	local base = bases:FindFirstChild("Base" .. baseIndex)
-	if not base then
-		return {}
-	end
-	local found = {}
-	for _, desc in ipairs(base:GetDescendants()) do
-		if desc:IsA("Model") and desc:GetAttribute("OwnerId") == player.UserId then
-			table.insert(found, (desc:GetAttribute("CharName") or "?") .. " $" .. (desc:GetAttribute("Rate") or 0) .. "/s")
+local function connectNotify()
+	local notify = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
+	notify.OnClientEvent:Connect(function(kind, a, b)
+		if kind == "Buy" then
+			HUD.showToast("BOUGHT " .. a .. " — $" .. b .. "/s!", Color3.fromRGB(80, 255, 120))
+		elseif kind == "Deny" then
+			HUD.showToast(a, Color3.fromRGB(255, 80, 80))
+		elseif kind == "WaveWarning" then
+			HUD.showBanner("TSUNAMI IN " .. a .. "s — RUN HOME!", Color3.fromRGB(200, 0, 0), a)
+		elseif kind == "WaveCountdown" then
+			BannerLabel.Text = "TSUNAMI IN " .. a .. "s — RUN HOME!"
+			BannerLabel.Visible = true
+			BannerUntil = os.clock() + 2
+		elseif kind == "WaveSweep" then
+			HUD.showBanner("TSUNAMI! GET TO YOUR BASE!", Color3.fromRGB(0, 120, 255), 5)
+		elseif kind == "GoldenHour" then
+			HUD.showBanner("GOLDEN HOUR — 2x INCOME!", Color3.fromRGB(255, 200, 0), 6)
+		elseif kind == "Mythic" then
+			HUD.showBanner("MYTHIC SPAWN: " .. a .. " — 2x INCOME 60s!", Color3.fromRGB(255, 60, 60), 6)
+		elseif kind == "Stolen" then
+			HUD.showBanner("STOLEN! " .. b .. " took your " .. a .. "!", Color3.fromRGB(255, 0, 0), 5)
+		elseif kind == "Steal" then
+			HUD.showToast("You stole " .. a .. " — run it home!", Color3.fromRGB(255, 200, 0))
+		elseif kind == "Deliver" then
+			HUD.showToast("DELIVERED " .. a .. " to your base!", Color3.fromRGB(80, 255, 120))
+		elseif kind == "Lock" then
+			HUD.showToast("Base LOCKED for " .. a .. "s!", Color3.fromRGB(80, 255, 120))
+		elseif kind == "Rebirth" then
+			HUD.showBanner("REBIRTH x" .. (1 + a * 0.25) .. " — +" .. 2 .. " SLOTS!", Color3.fromRGB(170, 80, 255), 6)
+		elseif kind == "Slap" then
+			HUD.showToast("You SLAPPED " .. a .. "!", Color3.fromRGB(255, 200, 0))
+		elseif kind == "Slapped" then
+			HUD.showToast(a .. " SLAPPED you!", Color3.fromRGB(255, 80, 80))
+		elseif kind == "BoughtBanner" then
+			HUD.showToast(a .. " bought " .. b .. "!", Color3.fromRGB(220, 220, 220))
+		elseif kind == "StealBanner" then
+			HUD.showToast(a .. " STOLE " .. b .. "!", Color3.fromRGB(255, 150, 0))
+		elseif kind == "RebirthBanner" then
+			HUD.showToast(a .. " REBIRTHED x" .. (1 + b * 0.25) .. "!", Color3.fromRGB(200, 120, 255))
+		elseif kind == "BaseList" then
+			OwnedList = a or {}
+			HUD.refreshBaseList()
 		end
-	end
-	return found
+	end)
 end
 
-function HUD.refreshStats()
-	local coins = player:GetAttribute("Coins") or 0
-	local income = player:GetAttribute("Income") or 0
-	coinsLabel.Text = "COINS $" .. coins
-	incomeLabel.Text = "EARNING $" .. income .. "/s"
-	local phase = gameState:GetAttribute("WavePhase") or "calm"
-	local timer = gameState:GetAttribute("WaveTimer") or 120
-	if phase == "warning" then
-		waveLabel.Text = "TSUNAMI IN " .. math.floor(timer) .. "s - RUN HOME!"
-		waveLabel.TextColor3 = Color3.fromRGB(255, 90, 90)
-	elseif phase == "sweep" then
-		waveLabel.Text = "TSUNAMI! RUN HOME!"
-		waveLabel.TextColor3 = Color3.fromRGB(255, 90, 90)
-	else
-		waveLabel.Text = "NEXT WAVE " .. fmtTime(timer)
-		waveLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	end
-	local golden = gameState:GetAttribute("GoldenLeft") or 0
-	local mythic = gameState:GetAttribute("MythicLeft") or 0
-	if golden > 0 and mythic > 0 then
-		bannerLabel.Text = "GOLDEN + MYTHIC 2x!"
-		bannerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-		bannerLabel.Visible = true
-	elseif golden > 0 then
-		bannerLabel.Text = "GOLDEN HOUR 2x! " .. math.floor(golden) .. "s"
-		bannerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-		bannerLabel.Visible = true
-	elseif mythic > 0 then
-		bannerLabel.Text = "MYTHIC 2x! " .. math.floor(mythic) .. "s"
-		bannerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-		bannerLabel.Visible = true
-	elseif not bannerThread then
-		bannerLabel.Visible = false
-	end
-	local owned = player:GetAttribute("OwnedCount") or 0
-	local slots = player:GetAttribute("Slots") or 8
-	slotsLabel.Text = "SLOTS " .. owned .. "/" .. slots
-	indexLabel.Text = "INDEX " .. (player:GetAttribute("IndexCount") or 0) .. "/16"
-	local ownedList = listOwned()
-	if #ownedList > 0 then
-		ownedLabel.Text = table.concat(ownedList, "\n")
-	else
-		ownedLabel.Text = "No brainrots yet - buy one on the belt!"
-	end
-	local lockLeft = player:GetAttribute("LockLeft") or 0
-	local lockCd = player:GetAttribute("LockCooldown") or 0
-	local protect = player:GetAttribute("SpawnProtect") or 0
-	if lockLeft > 0 then
-		lockButton.Text = "LOCKED " .. lockLeft .. "s"
-		lockButton.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
-	elseif lockCd > 0 then
-		lockButton.Text = "LOCK CD " .. lockCd .. "s"
-		lockButton.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
-	elseif protect > 0 then
-		lockButton.Text = "PROTECTED " .. protect .. "s"
-		lockButton.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
-	else
-		lockButton.Text = "LOCK BASE (60s)"
-		lockButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-	end
-	local rebirths = player:GetAttribute("Rebirths") or 0
-	rebirthButton.Text = "REBIRTH $10,000 (x" .. (1 + 0.25 * rebirths) .. ")"
-end
-
-lockButton.MouseButton1Click:Connect(function()
-	remotes:WaitForChild("LockRequest"):FireServer()
-end)
-
-rebirthButton.MouseButton1Click:Connect(function()
-	remotes:WaitForChild("RebirthRequest"):FireServer()
-end)
-
--- Floating +$X text whenever coins tick up.
-local lastCoins = 150
+buildGui()
+connectNotify()
+player:GetAttributeChangedSignal("Coins"):Connect(HUD.refreshStats)
+player:GetAttributeChangedSignal("Income"):Connect(HUD.refreshStats)
+player:GetAttributeChangedSignal("LockSeconds"):Connect(HUD.refreshStats)
+player:GetAttributeChangedSignal("LockCooldown"):Connect(HUD.refreshStats)
+player:GetAttributeChangedSignal("SlotsUsed"):Connect(HUD.refreshStats)
+player:GetAttributeChangedSignal("IndexCount"):Connect(HUD.refreshStats)
 task.spawn(function()
 	while true do
-		task.wait(0.5)
+		task.wait(1)
 		HUD.refreshStats()
-		local coins = player:GetAttribute("Coins") or 0
-		local gain = coins - lastCoins
-		if gain > 0 and gain < 100000 then
-			local float = Instance.new("TextLabel")
-			float.Size = UDim2.fromOffset(160, 36)
-			float.Position = UDim2.new(0.5, -80, 0.5, -40)
-			float.BackgroundTransparency = 1
-			float.Text = "+$" .. gain
-			float.TextColor3 = Color3.fromRGB(120, 255, 120)
-			float.TextSize = 28
-			float.Font = Enum.Font.SourceSansBold
-			float.TextStrokeTransparency = 0
-			float.Parent = gui
-			task.spawn(function()
-				for _ = 1, 20 do
-					task.wait(0.05)
-					float.Position += UDim2.fromOffset(0, -2)
-				end
-				float:Destroy()
-			end)
+		if BannerLabel.Visible and os.clock() > BannerUntil then
+			BannerLabel.Visible = false
 		end
-		lastCoins = coins
 	end
 end)
+HUD.refreshStats()

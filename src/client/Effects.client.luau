@@ -1,88 +1,158 @@
--- Effects: visual feedback for buys, waves and events. No uploaded assets:
--- particles, tweens and screen flashes only, so the feedback survives on
--- any account that opens the place.
+-- Brainrot Blitz effects: buy bursts, floating +$ income text, coin-drop
+-- text, slap and wave feedback, and the Slap tool's click wiring. Every
+-- feedback has a visible form; sound is decoration only.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-local gameState = ReplicatedStorage:WaitForChild("GameState")
-
 local Effects = {}
 
-function Effects.playBuyEffect(model)
-	if not model or not model.PrimaryPart then
-		return
-	end
-	local burst = Instance.new("ParticleEmitter")
-	burst.Color = ColorSequence.new(Color3.fromRGB(255, 215, 0))
-	burst.Size = NumberSequence.new(1.2)
-	burst.Lifetime = NumberRange.new(0.6)
-	burst.Rate = 60
-	burst.Speed = NumberRange.new(12)
-	burst.SpreadAngle = Vector2.new(180, 180)
-	burst.Parent = model.PrimaryPart
-	task.delay(1, function()
-		burst.Enabled = false
-		task.wait(1)
-		burst:Destroy()
-	end)
-	local startSize = model.PrimaryPart.Size
-	local goal = { Size = startSize * 1.25 }
-	local tween = TweenService:Create(model.PrimaryPart, TweenInfo.new(0.25), goal)
-	tween:Play()
-	tween.Completed:Connect(function()
-		TweenService:Create(model.PrimaryPart, TweenInfo.new(0.25), { Size = startSize }):Play()
+function Effects.playBuyEffect(position)
+	local anchor = Instance.new("Part")
+	anchor.Size = Vector3.new(1, 1, 1)
+	anchor.Transparency = 1
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CFrame = CFrame.new(position)
+	anchor.Parent = workspace
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Color = ColorSequence.new(Color3.fromRGB(255, 215, 0))
+	emitter.Size = NumberSequence.new(0.8)
+	emitter.Lifetime = NumberRange.new(0.6, 1)
+	emitter.Rate = 0
+	emitter.Speed = NumberRange.new(12, 20)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.Parent = anchor
+	emitter:Emit(40)
+	Effects.playSound("rbxasset://sounds/electronicpingshort.wav", position)
+	task.delay(2, function()
+		anchor:Destroy()
 	end)
 end
 
-local flash = Instance.new("Frame")
-flash.Name = "WaveFlash"
-flash.Size = UDim2.fromScale(1, 1)
-flash.BackgroundColor3 = Color3.fromRGB(40, 140, 255)
-flash.BackgroundTransparency = 1
-flash.BorderSizePixel = 0
-flash.Parent = playerGui:WaitForChild("BrainrotHUD")
+function Effects.playSound(soundId, position)
+	local sound = Instance.new("Sound")
+	sound.SoundId = soundId
+	sound.Volume = 0.6
+	sound.Parent = workspace
+	if position then
+		sound.Position = position
+	end
+	sound:Play()
+	task.delay(3, function()
+		sound:Destroy()
+	end)
+end
 
-local lastOwned = 0
-local lastPhase = "calm"
+function Effects.floatText(position, text, color)
+	local anchor = Instance.new("Part")
+	anchor.Size = Vector3.new(1, 1, 1)
+	anchor.Transparency = 1
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CFrame = CFrame.new(position + Vector3.new(0, 3, 0))
+	anchor.Parent = workspace
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.new(0, 160, 0, 50)
+	gui.AlwaysOnTop = true
+	gui.Parent = anchor
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = color
+	label.TextStrokeTransparency = 0
+	label.TextSize = 28
+	label.Font = Enum.Font.GothamBold
+	label.Parent = gui
+	local tween = TweenService:Create(anchor, TweenInfo.new(2, Enum.EasingStyle.Linear), {
+		CFrame = CFrame.new(position + Vector3.new(0, 10, 0)),
+	})
+	tween:Play()
+	task.delay(2, function()
+		anchor:Destroy()
+	end)
+end
 
-task.spawn(function()
-	while true do
-		task.wait(0.5)
-		local owned = player:GetAttribute("OwnedCount") or 0
-		if owned > lastOwned then
-			local baseIndex = player:GetAttribute("BaseIndex") or 0
-			local bases = workspace:FindFirstChild("Bases")
-			local base = bases and bases:FindFirstChild("Base" .. baseIndex)
-			if base then
-				local newest = nil
-				for _, desc in ipairs(base:GetDescendants()) do
-					if desc:IsA("Model") and desc:GetAttribute("OwnerId") == player.UserId then
-						newest = desc
-					end
-				end
-				if newest then
-					Effects.playBuyEffect(newest)
-				end
+function Effects.playWaveEffect()
+	Effects.playSound("rbxasset://sounds/electronicpingshort.wav")
+	Effects.playSound("rbxasset://sounds/electronicpingshort.wav")
+end
+
+function Effects.playSlapEffect(position)
+	local anchor = Instance.new("Part")
+	anchor.Size = Vector3.new(1, 1, 1)
+	anchor.Transparency = 1
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CFrame = CFrame.new(position)
+	anchor.Parent = workspace
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Color = ColorSequence.new(Color3.fromRGB(255, 80, 80))
+	emitter.Size = NumberSequence.new(1)
+	emitter.Lifetime = NumberRange.new(0.4, 0.8)
+	emitter.Rate = 0
+	emitter.Speed = NumberRange.new(15, 25)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.Parent = anchor
+	emitter:Emit(30)
+	task.delay(2, function()
+		anchor:Destroy()
+	end)
+end
+
+local function wireSlapTool(tool)
+	if tool.Name ~= "Slap" then
+		return
+	end
+	tool.Activated:Connect(function()
+		local remotes = ReplicatedStorage:WaitForChild("Remotes")
+		remotes.SlapRequest:FireServer()
+	end)
+end
+
+local function connectNotify()
+	local notify = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
+	notify.OnClientEvent:Connect(function(kind, a, b)
+		if kind == "Income" then
+			Effects.floatText(b, "+$" .. a, Color3.fromRGB(80, 255, 120))
+		elseif kind == "CoinDrop" then
+			local character = player.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if root then
+				Effects.floatText(root.Position, "-" .. a .. " coins", Color3.fromRGB(255, 80, 80))
+			end
+		elseif kind == "Buy" then
+			local character = player.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if root then
+				Effects.playBuyEffect(root.Position)
+			end
+		elseif kind == "WaveWarning" then
+			Effects.playSound("rbxasset://sounds/electronicpingshort.wav")
+		elseif kind == "WaveSweep" then
+			Effects.playWaveEffect()
+		elseif kind == "SlapEffect" then
+			Effects.playSlapEffect(a)
+		elseif kind == "Rebirth" then
+			local character = player.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if root then
+				Effects.playBuyEffect(root.Position)
 			end
 		end
-		lastOwned = owned
-		local phase = gameState:GetAttribute("WavePhase") or "calm"
-		if phase == "sweep" and lastPhase ~= "sweep" then
-			flash.BackgroundTransparency = 0.6
-			TweenService:Create(flash, TweenInfo.new(1.5), { BackgroundTransparency = 1 }):Play()
-		end
-		if phase == "warning" and lastPhase ~= "warning" then
-			flash.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-			flash.BackgroundTransparency = 0.75
-			TweenService:Create(flash, TweenInfo.new(1), { BackgroundTransparency = 1 }):Play()
-			flash.BackgroundColor3 = Color3.fromRGB(40, 140, 255)
-		end
-		lastPhase = phase
-	end
-end)
+	end)
+end
 
-return Effects
+local function connectSlapTool()
+	local backpack = player:WaitForChild("Backpack")
+	for _, tool in ipairs(backpack:GetChildren()) do
+		wireSlapTool(tool)
+	end
+	backpack.ChildAdded:Connect(wireSlapTool)
+end
+
+connectNotify()
+connectSlapTool()

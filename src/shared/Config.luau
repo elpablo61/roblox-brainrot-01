@@ -1,147 +1,178 @@
--- Brainrot Blitz shared config: the whole cast, rarities, mutations, prices,
--- wave timing, lock rules and rebirth rules. One table, read by every module.
+-- Brainrot Blitz: one source of truth for the whole game.
+-- Characters, rarities, prices, mutations, wave, lock and rebirth rules.
+-- Every other module reads this; nothing else hardcodes a number.
 
 local Config = {}
 
-Config.START_COINS = 150
-Config.BASE_SLOTS = 8
-Config.SLOTS_PER_REBIRTH = 2
-Config.REBIRTH_COST = 10000
-Config.REBIRTH_MULT = 0.25
-Config.LOCK_DURATION = 60
-Config.LOCK_PER_REBIRTH = 10
-Config.LOCK_COOLDOWN = 60
-Config.SPAWN_PROTECTION = 30
-Config.WAVE_INTERVAL = 120
-Config.WAVE_WARNING = 20
-Config.WAVE_SWEEP = 8
-Config.WAVE_COIN_LOSS = 0.10
-Config.GOLDEN_INTERVAL = 180
-Config.GOLDEN_DURATION = 60
-Config.MYTHIC_WINDOW = 60
-Config.BELT_SPEED = 6
-Config.BELT_START_X = -72
-Config.BELT_END_X = 72
-Config.BELT_Z = 0
-Config.MAX_BELT = 8
-Config.SPAWN_GAP = 3
-Config.CLICK_DISTANCE = 40
-Config.CARRY_SPEED = 8
-Config.NORMAL_SPEED = 16
+Config.StartingCash = 150
+Config.BaseSlots = 8
+Config.MaxPlayers = 8
 
-Config.RARITIES = {
-	Common = { color = Color3.fromRGB(170, 170, 170), weight = 45 },
-	Rare = { color = Color3.fromRGB(0, 120, 255), weight = 27 },
-	Epic = { color = Color3.fromRGB(170, 0, 255), weight = 15 },
-	Legendary = { color = Color3.fromRGB(255, 200, 0), weight = 8 },
-	Mythic = { color = Color3.fromRGB(255, 40, 40), weight = 3 },
-	Secret = { color = Color3.fromRGB(90, 0, 160), weight = 2 },
+Config.Rarities = {
+	Common = { Color = Color3.fromRGB(170, 170, 170), Weight = 45 },
+	Rare = { Color = Color3.fromRGB(60, 120, 255), Weight = 25 },
+	Epic = { Color = Color3.fromRGB(170, 80, 255), Weight = 15 },
+	Legendary = { Color = Color3.fromRGB(255, 200, 0), Weight = 9 },
+	Mythic = { Color = Color3.fromRGB(255, 60, 60), Weight = 4 },
+	Secret = { Color = Color3.fromRGB(40, 0, 80), Weight = 2 },
 }
 
-Config.MUTATIONS = {
-	{ name = "None", mult = 1, color = Color3.fromRGB(255, 255, 255), weight = 80 },
-	{ name = "Golden", mult = 2, color = Color3.fromRGB(255, 215, 0), weight = 11 },
-	{ name = "Diamond", mult = 4, color = Color3.fromRGB(120, 220, 255), weight = 5 },
-	{ name = "Blood", mult = 6, color = Color3.fromRGB(200, 0, 0), weight = 2 },
-	{ name = "Rainbow", mult = 8, color = Color3.fromRGB(255, 100, 220), weight = 2 },
+Config.RarityOrder = { "Common", "Rare", "Epic", "Legendary", "Mythic", "Secret" }
+
+-- Buy price is roughly 10-50x the $/sec rate and strictly rises with rarity.
+-- Starting cash $150 buys the first Common within 30 seconds of spawning.
+Config.Characters = {
+	{ Name = "Sir Quackington", Rarity = "Common", Rate = 5, Price = 50,
+		Body = Color3.fromRGB(255, 220, 80), Head = Color3.fromRGB(255, 200, 40), Accessory = "TopHat" },
+	{ Name = "Captain Crumb", Rarity = "Common", Rate = 6, Price = 75,
+		Body = Color3.fromRGB(180, 120, 60), Head = Color3.fromRGB(200, 150, 90), Accessory = "Cap" },
+	{ Name = "Turbo Turnip", Rarity = "Common", Rate = 8, Price = 150,
+		Body = Color3.fromRGB(200, 80, 200), Head = Color3.fromRGB(220, 120, 220), Accessory = "Sneakers" },
+	{ Name = "Professor Pickle", Rarity = "Rare", Rate = 20, Price = 250,
+		Body = Color3.fromRGB(80, 200, 80), Head = Color3.fromRGB(100, 220, 100), Accessory = "Glasses" },
+	{ Name = "Agent Avocado", Rarity = "Rare", Rate = 25, Price = 350,
+		Body = Color3.fromRGB(60, 160, 60), Head = Color3.fromRGB(90, 190, 90), Accessory = "Tie" },
+	{ Name = "DJ Toast", Rarity = "Rare", Rate = 30, Price = 750,
+		Body = Color3.fromRGB(220, 180, 120), Head = Color3.fromRGB(235, 200, 140), Accessory = "Headphones" },
+	{ Name = "Captain Noodle", Rarity = "Epic", Rate = 60, Price = 800,
+		Body = Color3.fromRGB(255, 220, 100), Head = Color3.fromRGB(255, 230, 130), Accessory = "PirateHat" },
+	{ Name = "Sir Reginald Ramen", Rarity = "Epic", Rate = 75, Price = 1200,
+		Body = Color3.fromRGB(230, 90, 60), Head = Color3.fromRGB(240, 120, 80), Accessory = "Crown" },
+	{ Name = "Madame Mooncake", Rarity = "Epic", Rate = 90, Price = 2000,
+		Body = Color3.fromRGB(240, 210, 160), Head = Color3.fromRGB(250, 225, 180), Accessory = "Flower" },
+	{ Name = "Lord Llama Latte", Rarity = "Legendary", Rate = 150, Price = 2500,
+		Body = Color3.fromRGB(245, 235, 215), Head = Color3.fromRGB(255, 245, 225), Accessory = "Crown" },
+	{ Name = "Duchess Dumpling", Rarity = "Legendary", Rate = 175, Price = 3500,
+		Body = Color3.fromRGB(250, 220, 230), Head = Color3.fromRGB(255, 235, 240), Accessory = "Tiara" },
+	{ Name = "Sir Barksalot", Rarity = "Legendary", Rate = 200, Price = 5000,
+		Body = Color3.fromRGB(150, 100, 60), Head = Color3.fromRGB(170, 120, 70), Accessory = "TopHat" },
+	{ Name = "The Golden Goblin of Gouda", Rarity = "Mythic", Rate = 400, Price = 7000,
+		Body = Color3.fromRGB(255, 200, 0), Head = Color3.fromRGB(255, 215, 40), Accessory = "Crown" },
+	{ Name = "Emperor Eggplant", Rarity = "Mythic", Rate = 600, Price = 10000,
+		Body = Color3.fromRGB(120, 40, 180), Head = Color3.fromRGB(140, 60, 200), Accessory = "Crown" },
+	{ Name = "Baron von Banana Peel", Rarity = "Secret", Rate = 900, Price = 45000,
+		Body = Color3.fromRGB(255, 230, 0), Head = Color3.fromRGB(255, 240, 60), Accessory = "Monocle" },
+	{ Name = "The Infinite Spaghetti Monster", Rarity = "Secret", Rate = 1200, Price = 60000,
+		Body = Color3.fromRGB(230, 120, 60), Head = Color3.fromRGB(240, 150, 80), Accessory = "Crown" },
 }
 
--- Prices rise with rarity and with $/sec: the first buy is possible in under
--- 30 seconds from the $150 starting cash (cheapest Common is $50).
-Config.CHARACTERS = {
-	{ name = "Sir Quackington", rarity = "Common", rate = 5, price = 50, color = Color3.fromRGB(255, 220, 0), accessory = "hat" },
-	{ name = "Captain Crumb", rarity = "Common", rate = 6, price = 60, color = Color3.fromRGB(150, 90, 40), accessory = "hat" },
-	{ name = "Turbo Turnip", rarity = "Common", rate = 8, price = 75, color = Color3.fromRGB(160, 60, 200), accessory = "sneakers" },
-	{ name = "Professor Pickle", rarity = "Rare", rate = 20, price = 250, color = Color3.fromRGB(60, 200, 60), accessory = "glasses" },
-	{ name = "Agent Avocado", rarity = "Rare", rate = 25, price = 300, color = Color3.fromRGB(40, 140, 60), accessory = "glasses" },
-	{ name = "DJ Toast", rarity = "Rare", rate = 30, price = 350, color = Color3.fromRGB(220, 170, 90), accessory = "headphones" },
-	{ name = "Captain Noodle", rarity = "Epic", rate = 60, price = 800, color = Color3.fromRGB(255, 140, 0), accessory = "hat" },
-	{ name = "Sir Reginald Ramen", rarity = "Epic", rate = 75, price = 1000, color = Color3.fromRGB(230, 40, 40), accessory = "crown" },
-	{ name = "Madame Mooncake", rarity = "Epic", rate = 90, price = 1200, color = Color3.fromRGB(255, 210, 120), accessory = "crown" },
-	{ name = "Lord Llama Latte", rarity = "Legendary", rate = 150, price = 2500, color = Color3.fromRGB(240, 220, 180), accessory = "hat" },
-	{ name = "Duchess Dumpling", rarity = "Legendary", rate = 175, price = 3000, color = Color3.fromRGB(250, 250, 250), accessory = "crown" },
-	{ name = "Sir Barksalot", rarity = "Legendary", rate = 200, price = 3500, color = Color3.fromRGB(120, 70, 20), accessory = "bowtie" },
-	{ name = "The Golden Goblin of Gouda", rarity = "Mythic", rate = 400, price = 7000, color = Color3.fromRGB(255, 215, 0), accessory = "crown" },
-	{ name = "Emperor Eggplant", rarity = "Mythic", rate = 600, price = 10000, color = Color3.fromRGB(120, 0, 180), accessory = "crown" },
-	{ name = "Baron von Banana Peel", rarity = "Secret", rate = 900, price = 45000, color = Color3.fromRGB(255, 235, 0), accessory = "hat" },
-	{ name = "The Infinite Spaghetti Monster", rarity = "Secret", rate = 1200, price = 60000, color = Color3.fromRGB(255, 80, 40), accessory = "crown" },
+Config.Mutations = {
+	{ Name = "None", Multiplier = 1, Weight = 70, Tint = nil },
+	{ Name = "Golden", Multiplier = 2, Weight = 15, Tint = Color3.fromRGB(255, 215, 0) },
+	{ Name = "Diamond", Multiplier = 4, Weight = 8, Tint = Color3.fromRGB(180, 230, 255) },
+	{ Name = "Rainbow", Multiplier = 8, Weight = 4, Tint = Color3.fromRGB(255, 100, 220) },
+	{ Name = "Blood", Multiplier = 6, Weight = 3, Tint = Color3.fromRGB(200, 0, 0) },
 }
 
-Config.BASE_COLORS = {
-	Color3.fromRGB(255, 80, 80),
-	Color3.fromRGB(80, 140, 255),
-	Color3.fromRGB(80, 220, 120),
-	Color3.fromRGB(255, 200, 40),
-	Color3.fromRGB(200, 80, 255),
-	Color3.fromRGB(80, 220, 220),
-	Color3.fromRGB(255, 140, 80),
-	Color3.fromRGB(255, 120, 200),
+Config.Conveyor = {
+	Start = Vector3.new(-70, 0.45, 0),
+	Finish = Vector3.new(70, 0.45, 0),
+	Speed = 4,
+	SpawnInterval = 4,
+	MaxOnBelt = 10,
 }
 
-Config.BASE_POSITIONS = {
-	Vector3.new(-63, 0, -48),
-	Vector3.new(-21, 0, -48),
-	Vector3.new(21, 0, -48),
-	Vector3.new(63, 0, -48),
-	Vector3.new(-63, 0, 48),
-	Vector3.new(-21, 0, 48),
-	Vector3.new(21, 0, 48),
-	Vector3.new(63, 0, 48),
+Config.Wave = {
+	Interval = 120,
+	Warning = 20,
+	WallHeight = 30,
+	WallWidth = 260,
+	CoinDropPercent = 10,
+}
+
+Config.Lock = {
+	Duration = 60,
+	PerRebirth = 10,
+	Cooldown = 60,
+	SpawnProtection = 30,
+}
+
+Config.Rebirth = {
+	Cost = 10000,
+	Multiplier = 1.25,
+	SlotsPerRebirth = 2,
+}
+
+Config.GoldenHour = {
+	Interval = 180,
+	Duration = 60,
+}
+
+Config.MythicBoost = {
+	Duration = 60,
 }
 
 function Config.getCharacter(name)
-	for _, char in ipairs(Config.CHARACTERS) do
-		if char.name == name then
+	for _, char in ipairs(Config.Characters) do
+		if char.Name == name then
 			return char
 		end
 	end
 	return nil
 end
 
+function Config.getRarityColor(rarity)
+	local entry = Config.Rarities[rarity]
+	if entry then
+		return entry.Color
+	end
+	return Color3.fromRGB(170, 170, 170)
+end
+
 function Config.pickRarity()
 	local total = 0
-	for _, data in pairs(Config.RARITIES) do
-		total += data.weight
+	for _, rarity in ipairs(Config.RarityOrder) do
+		total += Config.Rarities[rarity].Weight
 	end
-	local roll = math.random(total)
-	local acc = 0
-	for rarity, data in pairs(Config.RARITIES) do
-		acc += data.weight
-		if roll <= acc then
+	local roll = math.random(1, total)
+	for _, rarity in ipairs(Config.RarityOrder) do
+		roll -= Config.Rarities[rarity].Weight
+		if roll <= 0 then
 			return rarity
 		end
 	end
 	return "Common"
 end
 
-function Config.pickMutation()
-	local total = 0
-	for _, mut in ipairs(Config.MUTATIONS) do
-		total += mut.weight
-	end
-	local roll = math.random(total)
-	local acc = 0
-	for _, mut in ipairs(Config.MUTATIONS) do
-		acc += mut.weight
-		if roll <= acc then
-			return mut
-		end
-	end
-	return Config.MUTATIONS[1]
-end
-
 function Config.pickCharacter()
 	local rarity = Config.pickRarity()
 	local pool = {}
-	for _, char in ipairs(Config.CHARACTERS) do
-		if char.rarity == rarity then
+	for _, char in ipairs(Config.Characters) do
+		if char.Rarity == rarity then
 			table.insert(pool, char)
 		end
 	end
 	if #pool == 0 then
-		return Config.CHARACTERS[1]
+		return Config.Characters[1]
 	end
-	return pool[math.random(#pool)]
+	return pool[math.random(1, #pool)]
+end
+
+function Config.rollMutation()
+	local total = 0
+	for _, mutation in ipairs(Config.Mutations) do
+		total += mutation.Weight
+	end
+	local roll = math.random(1, total)
+	for _, mutation in ipairs(Config.Mutations) do
+		roll -= mutation.Weight
+		if roll <= 0 then
+			return mutation
+		end
+	end
+	return Config.Mutations[1]
+end
+
+function Config.getNextTier(ownedCount)
+	local sorted = {}
+	for _, char in ipairs(Config.Characters) do
+		table.insert(sorted, char)
+	end
+	table.sort(sorted, function(a, b)
+		return a.Price < b.Price
+	end)
+	local index = math.min(ownedCount + 1, #sorted)
+	return sorted[index]
 end
 
 return Config
