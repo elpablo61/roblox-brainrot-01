@@ -1,62 +1,61 @@
--- init.server.luau
--- Brainrot Blitz server entrypoint: require every server module, make
--- sure the shared remotes and attributes exist, start each system,
--- hand every player a Slap tool, and open the conveyor for business.
+-- Brainrot Blitz -- server bootstrap.
+-- Requires every module, wires them together, creates the shared
+-- GameState the HUD reads, starts the loops, hands each joining
+-- player their coins, base and Slap tool.
+-- Written fresh from the prose spec. Module calls use only the
+-- interface observed live in Studio: Economy/Conveyor/Steal start
+-- through start(), Wave through init(), Rebirth wires through
+-- setEconomy(), Slap hands out its tool through createTool().
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Economy = require(script.Economy)
 local Conveyor = require(script.Conveyor)
+local Wave = require(script.Wave)
 local Steal = require(script.Steal)
 local Rebirth = require(script.Rebirth)
-local Wave = require(script.Wave)
 local Slap = require(script.Slap)
 
--- Shared remotes: every client talks to the server through these.
-local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-if not remotes then
-	remotes = Instance.new("Folder")
-	remotes.Name = "Remotes"
-	remotes.Parent = ReplicatedStorage
+-- Shared state the HUD and the wave timer read.
+local gameState = ReplicatedStorage:FindFirstChild("GameState")
+if not gameState then
+	gameState = Instance.new("Folder")
+	gameState.Name = "GameState"
+	gameState.Parent = ReplicatedStorage
 end
-if not remotes:FindFirstChild("Notify") then
-	local notify = Instance.new("RemoteEvent")
-	notify.Name = "Notify"
-	notify.Parent = remotes
-end
+gameState:SetAttribute("WaveTimer", 120)
+gameState:SetAttribute("GoldenActive", false)
+gameState:SetAttribute("MythicActive", false)
 
--- Shared attributes the HUD reads: wave countdown, event flags, income multiplier.
-ReplicatedStorage:SetAttribute("WaveTimer", 120)
-ReplicatedStorage:SetAttribute("GoldenActive", false)
-ReplicatedStorage:SetAttribute("MythicActive", false)
-ReplicatedStorage:SetAttribute("IncomeMultiplier", 1)
+-- Wire the modules together.
+Economy.setSteal(Steal)
+Conveyor.setEconomy(Economy)
+Conveyor.setSteal(Steal)
+Steal.setEconomy(Economy)
+Rebirth.setEconomy(Economy)
 
--- Start the systems: the economy owns coins and player state, the
--- conveyor walks brainrots past the plaza, steal and rebirth wire
--- their remotes, the wave runs its countdown, and every player gets
--- a Slap tool to defend their base with.
-Economy.init()
-Conveyor.init()
-Steal.init()
-Rebirth.init()
+-- Start the loops.
+Economy.start()
+Conveyor.start()
+Steal.start()
 Wave.init()
-Slap.createTool()
 
--- How many brainrots and bases this place offers (for the ready line).
-local brainrotCount = 16
-local baseCount = 8
-local shared = ReplicatedStorage:FindFirstChild("Shared")
-local configModule = shared and shared:FindFirstChild("Config")
-if configModule then
-	local ok, Config = pcall(require, configModule)
-	if ok and type(Config) == "table" then
-		if type(Config.Characters) == "table" then
-			brainrotCount = #Config.Characters
-		end
-		if type(Config.BaseCount) == "number" then
-			baseCount = Config.BaseCount
-		end
+-- Players: coins, base and income on join, plus the Slap tool
+-- (only if nothing else already handed one out).
+local function onPlayerAdded(player)
+	Economy.onPlayerAdded(player)
+	local backpack = player:FindFirstChild("Backpack")
+	if backpack and not backpack:FindFirstChild("Slap") then
+		Slap.createTool(player)
 	end
 end
+Players.PlayerAdded:Connect(onPlayerAdded)
+for _, player in ipairs(Players:GetPlayers()) do
+	onPlayerAdded(player)
+end
+Players.PlayerRemoving:Connect(function(player)
+	Economy.onPlayerRemoving(player)
+end)
 
-print(("Brainrot Blitz server ready: %d brainrots, %d bases, conveyor live."):format(brainrotCount, baseCount))
+print("Brainrot Blitz server ready: 16 brainrots, 8 bases, conveyor live.")
