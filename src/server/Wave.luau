@@ -15,7 +15,7 @@ local Wave = {}
 local EconomyModule = nil
 local StealModule = nil
 local WaveTimer = Config.Wave.Interval
-local NextGoldenAt = Config.GoldenHour.Interval
+local NextGoldenAt = os.clock() + Config.GoldenHour.Interval
 local Sweeping = false
 
 local getNotify

@@ -43,6 +43,26 @@ function Slap.slapPlayer(attacker, victim)
 	return true
 end
 
+function Slap.createTool()
+	local starterPack = game:GetService("StarterPack")
+	if starterPack:FindFirstChild("Slap") then
+		return
+	end
+	local tool = Instance.new("Tool")
+	tool.Name = "Slap"
+	tool.RequiresHandle = true
+	tool.CanBeDropped = false
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Anchored = false
+	handle.CanCollide = false
+	handle.Color = Color3.fromRGB(255, 153, 179)
+	handle.Size = Vector3.new(1.5, 0.5, 2.5)
+	handle.Material = Enum.Material.SmoothPlastic
+	handle.Parent = tool
+	tool.Parent = starterPack
+end
+
 function Slap.setSteal(module)
 	StealModule = module
 end

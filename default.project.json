@@ -13,32 +13,11 @@
       }
     },
     "StarterPlayer": {
+      "$className": "StarterPlayer",
       "StarterPlayerScripts": {
         "Client": {
           "$className": "Folder",
           "$path": "src/client"
-        }
-      },
-      "StarterPack": {
-        "$className": "StarterPack",
-        "Slap": {
-          "$className": "Tool",
-          "$properties": {
-            "Name": "Slap",
-            "RequiresHandle": true,
-            "CanBeDropped": false
-          },
-          "Handle": {
-            "$className": "Part",
-            "$properties": {
-              "Anchored": false,
-              "CanCollide": false,
-              "Color": [1, 0.6, 0.7],
-              "CFrame": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
-              "Size": [1.5, 0.5, 2.5],
-              "Material": "SmoothPlastic"
-            }
-          }
         }
       }
     },
