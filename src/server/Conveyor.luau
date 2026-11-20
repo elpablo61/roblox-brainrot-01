@@ -12,21 +12,8 @@ local StealModule = nil
 local BeltFolder = nil
 local OnBelt = 0
 
-local function getNotify()
-	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
-end
-
-local function getState()
-	return ReplicatedStorage:WaitForChild("GameState")
-end
-
-function Conveyor.setEconomy(module)
-	EconomyModule = module
-end
-
-function Conveyor.setSteal(module)
-	StealModule = module
-end
+local getNotify
+local getState
 
 function Conveyor.spawnBrainrot()
 	if OnBelt >= Config.Conveyor.MaxOnBelt then
@@ -87,6 +74,22 @@ function Conveyor.spawnBrainrot()
 		Conveyor.walkBrainrot(model)
 	end)
 	return model
+end
+
+function Conveyor.setEconomy(module)
+	EconomyModule = module
+end
+
+function Conveyor.setSteal(module)
+	StealModule = module
+end
+
+getNotify = function()
+	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
+end
+
+getState = function()
+	return ReplicatedStorage:WaitForChild("GameState")
 end
 
 function Conveyor.buildAccessory(model, kind, headCFrame)

@@ -22,12 +22,7 @@ local ToastLabel
 local OwnedList = {}
 local BannerUntil = 0
 
-local function formatTime(seconds)
-	seconds = math.max(0, math.floor(seconds + 0.5))
-	local minutes = math.floor(seconds / 60)
-	local rest = seconds % 60
-	return string.format("%02d:%02d", minutes, rest)
-end
+local formatTime
 
 function HUD.refreshStats()
 	local coins = player:GetAttribute("Coins") or 150
@@ -68,6 +63,13 @@ function HUD.refreshStats()
 		BoostLabel.Text = "2x INCOME ACTIVE!"
 	end
 	HUD.refreshBaseList()
+end
+
+formatTime = function(seconds)
+	seconds = math.max(0, math.floor(seconds + 0.5))
+	local minutes = math.floor(seconds / 60)
+	local rest = seconds % 60
+	return string.format("%02d:%02d", minutes, rest)
 end
 
 function HUD.refreshBaseList()

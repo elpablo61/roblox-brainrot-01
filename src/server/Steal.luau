@@ -13,13 +13,7 @@ local EconomyModule = nil
 local Carrying = {}
 local Locks = {}
 
-local function getNotify()
-	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
-end
-
-function Steal.setEconomy(module)
-	EconomyModule = module
-end
+local getNotify
 
 function Steal.attemptSteal(player, model)
 	if not model or not model.Parent then
@@ -52,6 +46,14 @@ function Steal.attemptSteal(player, model)
 	end
 	getNotify():FireAllClients("StealBanner", player.Name, model:GetAttribute("CharName"))
 	return true
+end
+
+function Steal.setEconomy(module)
+	EconomyModule = module
+end
+
+getNotify = function()
+	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
 end
 
 function Steal.lockBase(player)

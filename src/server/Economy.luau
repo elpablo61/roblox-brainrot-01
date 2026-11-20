@@ -23,17 +23,8 @@ local Data = {}
 local TakenBases = {}
 local StealModule = nil
 
-local function getNotify()
-	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
-end
-
-local function getState()
-	return ReplicatedStorage:WaitForChild("GameState")
-end
-
-function Economy.setSteal(module)
-	StealModule = module
-end
+local getNotify
+local getState
 
 function Economy.buyBrainrot(player, model)
 	if not model or not model.Parent then
@@ -87,6 +78,18 @@ function Economy.collectIncome(player)
 	end
 	Economy.refreshPlayer(player)
 	return rate
+end
+
+function Economy.setSteal(module)
+	StealModule = module
+end
+
+getNotify = function()
+	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
+end
+
+getState = function()
+	return ReplicatedStorage:WaitForChild("GameState")
 end
 
 function Economy.getRate(player)

@@ -9,13 +9,7 @@ local Rebirth = {}
 
 local EconomyModule = nil
 
-local function getNotify()
-	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
-end
-
-function Rebirth.setEconomy(module)
-	EconomyModule = module
-end
+local getNotify
 
 function Rebirth.applyRebirth(player)
 	if not EconomyModule then
@@ -33,6 +27,14 @@ function Rebirth.applyRebirth(player)
 	getNotify():FireClient(player, "Rebirth", rebirths, slots)
 	getNotify():FireAllClients("RebirthBanner", player.Name, rebirths)
 	return true
+end
+
+function Rebirth.setEconomy(module)
+	EconomyModule = module
+end
+
+getNotify = function()
+	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
 end
 
 function Rebirth.canRebirth(player)

@@ -18,21 +18,8 @@ local WaveTimer = Config.Wave.Interval
 local NextGoldenAt = Config.GoldenHour.Interval
 local Sweeping = false
 
-local function getNotify()
-	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
-end
-
-local function getState()
-	return ReplicatedStorage:WaitForChild("GameState")
-end
-
-function Wave.setEconomy(module)
-	EconomyModule = module
-end
-
-function Wave.setSteal(module)
-	StealModule = module
-end
+local getNotify
+local getState
 
 function Wave.startTsunami()
 	if Sweeping then
@@ -50,6 +37,22 @@ function Wave.startTsunami()
 		Wave.sweepWall()
 		Sweeping = false
 	end)
+end
+
+function Wave.setEconomy(module)
+	EconomyModule = module
+end
+
+function Wave.setSteal(module)
+	StealModule = module
+end
+
+getNotify = function()
+	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
+end
+
+getState = function()
+	return ReplicatedStorage:WaitForChild("GameState")
 end
 
 function Wave.sweepWall()

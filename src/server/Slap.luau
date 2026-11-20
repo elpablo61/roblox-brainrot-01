@@ -11,13 +11,7 @@ local StealModule = nil
 local SLAP_RANGE = 12
 local SLAP_POWER = 55
 
-local function getNotify()
-	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
-end
-
-function Slap.setSteal(module)
-	StealModule = module
-end
+local getNotify
 
 function Slap.slapPlayer(attacker, victim)
 	if not attacker or not victim or attacker == victim then
@@ -47,6 +41,14 @@ function Slap.slapPlayer(attacker, victim)
 	getNotify():FireClient(victim, "Slapped", attacker.Name)
 	getNotify():FireAllClients("SlapEffect", victimRoot.Position)
 	return true
+end
+
+function Slap.setSteal(module)
+	StealModule = module
+end
+
+getNotify = function()
+	return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
 end
 
 function Slap.findVictim(attacker)
