@@ -32,14 +32,11 @@ function Effects.playBuyEffect(position)
 	end)
 end
 
-function Effects.playSound(soundId, position)
+function Effects.playSound(soundId, _position)
 	local sound = Instance.new("Sound")
 	sound.SoundId = soundId
 	sound.Volume = 0.6
 	sound.Parent = workspace
-	if position then
-		sound.Position = position
-	end
 	sound:Play()
 	task.delay(3, function()
 		sound:Destroy()

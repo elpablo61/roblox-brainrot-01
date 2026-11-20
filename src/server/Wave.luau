@@ -39,12 +39,17 @@ function Wave.startTsunami()
 		return
 	end
 	Sweeping = true
-	local notify = getNotify()
-	notify:FireAllClients("WaveWarning", Config.Wave.Warning)
-	task.wait(Config.Wave.Warning)
-	Wave.sweepWall()
-	Sweeping = false
 	WaveTimer = Config.Wave.Interval
+	task.spawn(function()
+		local notify = getNotify()
+		notify:FireAllClients("WaveWarning", Config.Wave.Warning)
+		for i = Config.Wave.Warning, 1, -1 do
+			task.wait(1)
+			notify:FireAllClients("WaveCountdown", i)
+		end
+		Wave.sweepWall()
+		Sweeping = false
+	end)
 end
 
 function Wave.sweepWall()
@@ -143,7 +148,7 @@ function Wave.updateTimers()
 		Wave.startGoldenHour()
 		NextGoldenAt = now + Config.GoldenHour.Interval
 	end
-	state:SetAttribute("WaveTimer", WaveTimer)
+	state:SetAttribute("WaveTimer", math.max(0, WaveTimer))
 end
 
 function Wave.start()
@@ -152,9 +157,6 @@ function Wave.start()
 			task.wait(1)
 			Wave.updateTimers()
 			WaveTimer -= 1
-			if WaveTimer <= Config.Wave.Warning and WaveTimer > 0 then
-				getNotify():FireAllClients("WaveCountdown", WaveTimer)
-			end
 			if WaveTimer <= 0 then
 				Wave.startTsunami()
 			end

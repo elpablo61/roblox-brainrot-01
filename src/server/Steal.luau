@@ -124,11 +124,11 @@ function Steal.attachCarried(player, model)
 	end
 	local body = model.PrimaryPart or model:FindFirstChild("Body")
 	if body then
+		body.CFrame = root.CFrame * CFrame.new(0, 1.5, 1.8)
 		local weld = Instance.new("WeldConstraint")
 		weld.Part0 = body
 		weld.Part1 = root
 		weld.Parent = body
-		body.CFrame = root.CFrame * CFrame.new(0, 1.5, 1.8)
 	end
 	model.Parent = character
 	humanoid.WalkSpeed = 10

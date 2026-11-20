@@ -141,6 +141,7 @@ function Conveyor.buildLabel(model, char, rate, mutation)
 	gui.Size = UDim2.new(0, 220, 0, 90)
 	gui.StudsOffset = Vector3.new(0, 5.5, 0)
 	gui.AlwaysOnTop = true
+	gui.Adornee = model:FindFirstChild("Body")
 	gui.Parent = model
 	local rarityColor = Config.getRarityColor(char.Rarity)
 	local nameLabel = Instance.new("TextLabel")
@@ -205,7 +206,7 @@ function Conveyor.onBrainrotClicked(player, model)
 		if model:GetAttribute("Owner") ~= player.Name and StealModule then
 			StealModule.attemptSteal(player, model)
 		end
-	elseif state == "Carried" then
+	elseif state == "Carried" or state == "Dropped" then
 		if StealModule then
 			StealModule.pickupDropped(player, model)
 		end
