@@ -1,110 +1,62 @@
--- Brainrot Blitz server bootstrap: creates the remotes and game state,
--- wires the modules together, and starts the conveyor, the economy tick,
--- the wave timer and the steal loop.
+-- init.server.luau
+-- Brainrot Blitz server entrypoint: require every server module, make
+-- sure the shared remotes and attributes exist, start each system,
+-- hand every player a Slap tool, and open the conveyor for business.
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Config = require(ReplicatedStorage.Shared.Config)
-local Conveyor = require(script.Conveyor)
 local Economy = require(script.Economy)
-local Wave = require(script.Wave)
+local Conveyor = require(script.Conveyor)
 local Steal = require(script.Steal)
 local Rebirth = require(script.Rebirth)
+local Wave = require(script.Wave)
 local Slap = require(script.Slap)
 
-local function createRemotes()
-	local remotes = Instance.new("Folder")
+-- Shared remotes: every client talks to the server through these.
+local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+if not remotes then
+	remotes = Instance.new("Folder")
 	remotes.Name = "Remotes"
 	remotes.Parent = ReplicatedStorage
-	for _, name in ipairs({ "Notify", "LockRequest", "RebirthRequest", "SlapRequest" }) do
-		local event = Instance.new("RemoteEvent")
-		event.Name = name
-		event.Parent = remotes
-	end
-	local state = Instance.new("Folder")
-	state.Name = "GameState"
-	state.Parent = ReplicatedStorage
-	state:SetAttribute("WaveTimer", Config.Wave.Interval)
-	state:SetAttribute("GoldenActive", false)
-	state:SetAttribute("MythicActive", false)
-	state:SetAttribute("GoldenUntil", 0)
-	state:SetAttribute("MythicUntil", 0)
-	local dropped = Instance.new("Folder")
-	dropped.Name = "DroppedBrainrots"
-	dropped.Parent = workspace
+end
+if not remotes:FindFirstChild("Notify") then
+	local notify = Instance.new("RemoteEvent")
+	notify.Name = "Notify"
+	notify.Parent = remotes
 end
 
-local function wireModules()
-	Conveyor.setEconomy(Economy)
-	Conveyor.setSteal(Steal)
-	Economy.setSteal(Steal)
-	Steal.setEconomy(Economy)
-	Wave.setEconomy(Economy)
-	Wave.setSteal(Steal)
-	Rebirth.setEconomy(Economy)
-	Slap.setSteal(Steal)
-end
+-- Shared attributes the HUD reads: wave countdown, event flags, income multiplier.
+ReplicatedStorage:SetAttribute("WaveTimer", 120)
+ReplicatedStorage:SetAttribute("GoldenActive", false)
+ReplicatedStorage:SetAttribute("MythicActive", false)
+ReplicatedStorage:SetAttribute("IncomeMultiplier", 1)
 
-local function connectRemotes()
-	local remotes = ReplicatedStorage:WaitForChild("Remotes")
-	remotes.LockRequest.OnServerEvent:Connect(function(player)
-		Steal.lockBase(player)
-	end)
-	remotes.RebirthRequest.OnServerEvent:Connect(function(player)
-		Rebirth.applyRebirth(player)
-	end)
-	remotes.SlapRequest.OnServerEvent:Connect(function(player)
-		local victim = Slap.findVictim(player)
-		if victim then
-			Slap.slapPlayer(player, victim)
-		end
-	end)
-end
-
-local function updateNextTierBoard()
-	local board = workspace:FindFirstChild("NextTierBoard")
-	if not board then
-		return
-	end
-	local gui = board:FindFirstChild("BoardGui")
-	local label = gui and gui:FindFirstChild("TierLabel")
-	if not label then
-		return
-	end
-	local most = 0
-	for _, player in ipairs(Players:GetPlayers()) do
-		most = math.max(most, #Economy.getOwned(player))
-	end
-	local next = Config.getNextTier(most)
-	label.Text = "NEXT: " .. string.upper(next.Rarity) .. " — " .. next.Name .. " — $" .. next.Rate .. "/s — $" .. next.Price
-end
-
-local function connectPlayers()
-	Players.PlayerAdded:Connect(function(player)
-		Economy.onPlayerAdded(player)
-	end)
-	Players.PlayerRemoving:Connect(function(player)
-		Economy.onPlayerRemoving(player)
-	end)
-	for _, player in ipairs(Players:GetPlayers()) do
-		Economy.onPlayerAdded(player)
-	end
-end
-
-createRemotes()
-wireModules()
-connectRemotes()
-connectPlayers()
+-- Start the systems: the economy owns coins and player state, the
+-- conveyor walks brainrots past the plaza, steal and rebirth wire
+-- their remotes, the wave runs its countdown, and every player gets
+-- a Slap tool to defend their base with.
+Economy.init()
+Conveyor.init()
+Steal.init()
+Rebirth.init()
+Wave.init()
 Slap.createTool()
-Conveyor.start()
-Economy.start()
-Wave.start()
-Steal.start()
-task.spawn(function()
-	while true do
-		task.wait(5)
-		updateNextTierBoard()
+
+-- How many brainrots and bases this place offers (for the ready line).
+local brainrotCount = 16
+local baseCount = 8
+local shared = ReplicatedStorage:FindFirstChild("Shared")
+local configModule = shared and shared:FindFirstChild("Config")
+if configModule then
+	local ok, Config = pcall(require, configModule)
+	if ok and type(Config) == "table" then
+		if type(Config.Characters) == "table" then
+			brainrotCount = #Config.Characters
+		end
+		if type(Config.BaseCount) == "number" then
+			baseCount = Config.BaseCount
+		end
 	end
-end)
-print("Brainrot Blitz server ready: 16 brainrots, 8 bases, conveyor live")
+end
+
+print(("Brainrot Blitz server ready: %d brainrots, %d bases, conveyor live."):format(brainrotCount, baseCount))
